@@ -1,0 +1,24 @@
+# ============================================================
+#  PUBLIC REPO — keep ALL readable rules out of git.
+#  Only the ENCRYPTED bundle (app/data.enc.js) + the app ship.
+# ============================================================
+
+# Plaintext rule sources (the editable originals) — NEVER commit to a public repo
+2- Playtest Stage/
+data/
+app/data.js
+
+# Large reference rulebooks (~700MB)
+*.pdf
+
+# Local playtest data (private to you)
+rosters/
+playtests/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Note: app/data.enc.js IS committed — it's ciphertext, useless without the passphrase.
+.claude/
