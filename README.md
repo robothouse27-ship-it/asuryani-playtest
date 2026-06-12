@@ -32,9 +32,10 @@ The source of truth is the Word/Excel files in `2- Playtest Stage/`. After you e
 the three-step build, **then commit and push the encrypted bundle**:
 
 ```bash
-python3 build/extract.py            # docx/xlsx  -> data/*.json
-python3 build/bundle.py             # data/*.json -> app/data.js  (plaintext, git-ignored)
-PW='Spaceelfs' node build/encrypt.js  # app/data.js -> app/data.enc.js  (encrypted, committed)
+python3 build/extract.py            # unit docx/xlsx        -> data/*.json
+python3 build/glossary.py           # rules/wargear/traits  -> data/glossary.json
+python3 build/bundle.py             # data/*.json           -> app/data.js  (plaintext, git-ignored)
+PW='Spaceelfs' node build/encrypt.js  # app/data.js         -> app/data.enc.js  (encrypted, committed)
 git add app/data.enc.js && git commit -m "rules update" && git push
 ```
 
@@ -42,6 +43,7 @@ Reload the app (and re-enter the passphrase). `extract.py`/`bundle.py` are pure-
 `encrypt.js` uses Node's built-in crypto.
 
 - `build/extract.py` — parses the docx unit files + weapons spreadsheet into JSON in `data/`.
+- `build/glossary.py` — parses the Special Rules / Wargear / Traits docs into `data/glossary.json` (powers the clickable term pop-ups on datasheets).
 - `build/bundle.py` — packs `data/` into the single plaintext `app/data.js`.
 - `build/encrypt.js` — AES-256-GCM encrypts the bundle into `app/data.enc.js` (the only data file published).
 
