@@ -140,6 +140,12 @@ def extract_wargear_lists():
 # ---------- UNITS ----------
 STAT_KEYS = ['M','WS','BS','S','T','W','I','A','LD','CL','WP','IN','SAV','INV']
 
+# Unit titles whose docx heading mis-extracts (e.g. a drop-cap first letter the
+# parser drops). Keyed by the filename-derived id; overrides the parsed title.
+NAME_OVERRIDES = {
+    'ranger-lord': 'Ranger Lord',
+}
+
 def parse_unit(path, slot):
     blocks = docx_blocks(path)
     name = None
@@ -148,9 +154,10 @@ def parse_unit(path, slot):
             name = c; break
         if k == 'tbl' and c and c[0]:
             name = c[0][0]; break
+    uid = slug(os.path.splitext(os.path.basename(path))[0])
     unit = {
-        'id': slug(os.path.splitext(os.path.basename(path))[0]),
-        'name': name or os.path.splitext(os.path.basename(path))[0],
+        'id': uid,
+        'name': NAME_OVERRIDES.get(uid, name or os.path.splitext(os.path.basename(path))[0]),
         'slot': slot,
         'composition': None, 'baseCost': None, 'pointsValue': None,
         'sizeRules': [], 'lore': [], 'profiles': [],

@@ -1,0 +1,16 @@
+{
+  "name": "Asuryani Playtest",
+  "short_name": "Asuryani",
+  "description": "Horus Heresy 3.0 Asuryani army list builder & playtest tracker",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070b0e",
+  "theme_color": "#070b0e",
+  "icons": [
+    { "src": "app/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "app/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "app/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
