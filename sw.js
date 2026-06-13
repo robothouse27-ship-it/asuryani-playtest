@@ -2,10 +2,10 @@
    Precaches the app shell + encrypted rules bundle so the app installs and runs
    fully offline. Navigation = network-first (so a redeploy shows up), static
    assets = cache-first. Bump CACHE to force clients onto a new build. */
-const CACHE = "asuryani-v2";
+const CACHE = "asuryani-v3";
 const ASSETS = [
   "./", "./index.html", "./manifest.webmanifest",
-  "./app/data.enc.js",
+  "./app/data.enc.js", "./Eldar_Rune.webp",
   "./app/icons/icon-192.png", "./app/icons/icon-512.png", "./app/icons/apple-touch-icon.png"
 ];
 

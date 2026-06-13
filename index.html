@@ -93,7 +93,8 @@ input,select,textarea{font-family:inherit}
 #gate button:hover{background:var(--accent);color:#04211a;box-shadow:0 6px 22px var(--glow-strong)}
 #gate .err{color:var(--red);font-size:12px;min-height:16px;margin-top:12px}
 .rune{font-size:36px;color:var(--accent);filter:drop-shadow(0 0 16px var(--glow-strong));
-  animation:runefloat 5s var(--ease) infinite}
+  animation:runefloat 5s var(--ease) infinite;margin-bottom:18px}
+.rune img{height:74px;width:auto;display:block;filter:drop-shadow(0 0 18px var(--glow-strong))}
 @keyframes runefloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 
 /* ---- app ---- */
@@ -105,7 +106,8 @@ header.top{position:relative;display:flex;align-items:center;gap:12px;padding:9p
 header.top .title{font-size:15px;font-weight:600;letter-spacing:.8px;white-space:nowrap;
   font-family:var(--font-display);display:flex;align-items:center;gap:8px}
 header.top .title b{color:var(--accent);font-weight:600}
-header.top .title .crest{filter:drop-shadow(0 0 8px var(--glow-strong))}
+header.top .title .crest{display:inline-flex;align-items:center;filter:drop-shadow(0 0 8px var(--glow-strong))}
+header.top .title .crest img{height:22px;width:auto;display:block}
 header.top .grow{flex:1}
 .field{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.4px;
   text-transform:uppercase;color:var(--muted)}
@@ -441,7 +443,7 @@ table.kv td:first-child{color:var(--muted)}
 <body>
 
 <div id="gate">
-  <div class="rune">✦</div>
+  <div class="rune"><img src="Eldar_Rune.webp" alt="Asuryani rune"></div>
   <div class="box">
     <h1>Asuryani Playtest</h1>
     <div class="sub">Horus Heresy 3.0 · private list builder</div>
@@ -454,7 +456,7 @@ table.kv td:first-child{color:var(--muted)}
 
 <div id="app">
   <header class="top">
-    <div class="title"><span class="crest" id="crest">✦</span> <b id="armyName">Asuryani</b></div>
+    <div class="title"><span class="crest" id="crest"><img src="Eldar_Rune.webp" alt=""></span> <b id="armyName">Asuryani</b></div>
     <div class="modeseg" id="modeSeg">
       <button data-mode="build" class="on">Build</button>
       <button data-mode="play">Play</button>
@@ -1177,7 +1179,7 @@ function flash(msg){
 // Each army gets a skin = a <html data-skin> CSS block + an entry here. Add a new
 // army later by copying one CSS block above and adding one line to this array.
 const SKINS=[
-  {id:"asuryani",name:"Asuryani",crest:"✦",sub:"Wraithbone & spirit-stone"},
+  {id:"asuryani",name:"Asuryani",crest:"✦",img:"Eldar_Rune.webp",sub:"Wraithbone & spirit-stone"},
   {id:"neutral", name:"Neutral",  crest:"✧",sub:"Unaligned steel"}
 ];
 const SKIN_KEY="asuryani_skin";
@@ -1186,7 +1188,8 @@ function applySkin(id){
   document.documentElement.setAttribute("data-skin",s.id);
   try{localStorage.setItem(SKIN_KEY,s.id);}catch(e){}
   const lbl=document.getElementById("skinLabel"); if(lbl) lbl.textContent=s.name;
-  const crest=document.getElementById("crest"); if(crest) crest.textContent=s.crest;
+  const crest=document.getElementById("crest");
+  if(crest){ if(s.img){crest.innerHTML=`<img src="${s.img}" alt="">`;} else {crest.textContent=s.crest;} }
   const army=document.getElementById("armyName"); if(army) army.textContent=s.name;
   const tc=document.querySelector('meta[name="theme-color"]');
   if(tc) tc.setAttribute("content",getComputedStyle(document.body).getPropertyValue("--bg").trim()||"#070b0e");
