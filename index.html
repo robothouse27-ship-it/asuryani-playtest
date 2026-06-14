@@ -106,7 +106,8 @@ header.top{position:relative;display:flex;align-items:center;gap:12px;padding:9p
 header.top .title{font-size:15px;font-weight:600;letter-spacing:.8px;white-space:nowrap;
   font-family:var(--font-display);display:flex;align-items:center;gap:8px}
 header.top .title b{color:var(--accent);font-weight:600}
-header.top .title .crest{display:inline-flex;align-items:center;filter:drop-shadow(0 0 8px var(--glow-strong))}
+header.top .title .crest{display:inline-flex;align-items:center;color:var(--accent);font-size:17px;
+  filter:drop-shadow(0 0 8px var(--glow-strong))}
 header.top .title .crest img{height:22px;width:auto;display:block}
 header.top .grow{flex:1}
 .field{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.4px;
@@ -129,18 +130,38 @@ header.top .grow{flex:1}
 .skinpick>button{display:flex;align-items:center;gap:7px;background:var(--panel2);
   border:1px solid var(--line);color:var(--bone);border-radius:9px;padding:6px 11px;font-size:12px}
 .skinpick>button:hover{border-color:var(--accent)}
-.skinpick .gem{width:12px;height:12px;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,#fff8,var(--accent) 55%,var(--accent-d));
+.skinpick #skinLabel{display:inline-block;max-width:130px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:middle}
+.skinpick .gem{width:12px;height:12px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 35% 30%,#fff8,var(--g,var(--accent)) 55%,var(--gd,var(--accent-d)));
   box-shadow:0 0 8px var(--glow-strong)}
-.skinmenu{position:absolute;top:calc(100% + 6px);right:0;z-index:30;min-width:170px;
-  background:var(--panel2);border:1px solid var(--edge);border-radius:11px;padding:5px;
-  box-shadow:0 18px 50px #000b;display:none}
+.skinmenu{position:absolute;top:calc(100% + 6px);right:0;z-index:30;width:248px;max-height:min(70vh,520px);
+  overflow-y:auto;background:var(--panel2);border:1px solid var(--edge);border-radius:12px;padding:6px;
+  box-shadow:0 22px 60px #000c;display:none}
 .skinmenu.show{display:block}
-.skinmenu button{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
-  background:none;border:none;color:var(--bone);padding:8px 9px;border-radius:7px;font-size:12.5px}
-.skinmenu button:hover{background:var(--panel)}
-.skinmenu button[aria-current="true"]{color:var(--accent)}
-.skinmenu .gem{width:13px;height:13px}
+/* collapsible army group */
+.armgrp{border-radius:8px}
+.armgrp+.armgrp{margin-top:2px}
+.armgrp>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;
+  padding:8px 9px;border-radius:7px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;
+  color:var(--muted);font-family:var(--font-display);user-select:none}
+.armgrp>summary::-webkit-details-marker{display:none}
+.armgrp>summary:hover{background:var(--panel);color:var(--bone)}
+.armgrp>summary .gchev{transition:transform .18s var(--ease);color:var(--dim);font-size:9px}
+.armgrp[open]>summary .gchev{transform:rotate(90deg);color:var(--accent)}
+.armgrp>summary .gcount{margin-left:auto;font-size:10px;font-family:var(--font-mono);color:var(--dim);letter-spacing:0}
+.armrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;
+  color:var(--bone);padding:8px 9px 8px 22px;border-radius:7px;font-size:12.5px;transition:.12s}
+.armrow:hover{background:var(--panel)}
+.armrow .gem{width:14px;height:14px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 35% 30%,#fff9,var(--g) 52%,var(--gd));
+  box-shadow:0 0 9px color-mix(in srgb,var(--g) 55%,transparent)}
+.armrow .al{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.armrow .an{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.armrow .as{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.armrow[aria-current="true"]{background:var(--glow)}
+.armrow[aria-current="true"] .an{color:var(--accent)}
+.armrow .ck{color:var(--accent);font-size:12px;flex:none}
 
 main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);overflow:hidden;flex:1;min-height:0}
 .tabs{display:none}
@@ -1175,35 +1196,99 @@ function flash(msg){
   document.body.appendChild(d);setTimeout(()=>d.remove(),1800);
 }
 
-// ---------- skins ----------
-// Each army gets a skin = a <html data-skin> CSS block + an entry here. Add a new
-// army later by copying one CSS block above and adding one line to this array.
-const SKINS=[
-  {id:"asuryani",name:"Asuryani",crest:"✦",img:"Eldar_Rune.webp",sub:"Wraithbone & spirit-stone"},
-  {id:"neutral", name:"Neutral",  crest:"✧",sub:"Unaligned steel"}
+// ---------- armies (themes) ----------
+// Each army is one entry below; its full palette is generated from two seed
+// colours (accent + accent-dark) over a per-group dark base, then applied as
+// inline CSS custom properties on <html>. No per-army CSS block needed, so new
+// Legions are a one-line add. The gate keeps the hardcoded data-skin="asuryani".
+const _hx=h=>{h=h.replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
+const _rgba=(h,a)=>{const[r,g,b]=_hx(h);return`rgba(${r},${g},${b},${a})`;};
+const _dark=(h,f)=>{const[r,g,b]=_hx(h);return`rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`;};
+
+// Per-group dark canvas (background / panels / neutral text). Identity comes
+// from each army's accent + ambient glow layered on top of this.
+const GROUPS={
+  aeldari :{label:"Aeldari",          glyph:"✦", bg:"#070b0e",panel:"#0e151a",panel2:"#16212a",line:"#22323d",edge:"#33505c",bone:"#ece7d8",muted:"#93a4ab",dim:"#5d717a",amber:"#f0c069",red:"#e8786c",green:"#8fce63"},
+  loyalist:{label:"Loyalist Astartes",glyph:"✠", bg:"#090b0f",panel:"#11151c",panel2:"#19202a",line:"#243041",edge:"#3a4d62",bone:"#e9ebf0",muted:"#97a1b0",dim:"#646e7d",amber:"#e7c878",red:"#e08080",green:"#86c45b"},
+  traitor :{label:"Traitor Astartes", glyph:"✶", bg:"#0b0807",panel:"#17110e",panel2:"#221813",line:"#382620",edge:"#553a2c",bone:"#ece2da",muted:"#ab9b92",dim:"#75645c",amber:"#d6a24e",red:"#e07a6c",green:"#9bbf5c"},
+  generic :{label:"Generic",          glyph:"✧", bg:"#0c0d10",panel:"#13151b",panel2:"#1b1f27",line:"#272c36",edge:"#3a4250",bone:"#e7e9ee",muted:"#98a0ae",dim:"#646c7a",amber:"#d9b877",red:"#e08080",green:"#86c45b"}
+};
+const GROUP_ORDER=["aeldari","loyalist","traitor","generic"];
+// army(group, id, name, accent, accentDark, subtitle, extra?)
+const A=(g,id,name,c,cd,sub,extra)=>({g,id,name,c:[c,cd],sub,...(extra||{})});
+const ARMIES=[
+  A("aeldari","asuryani","Asuryani","#62d7b2","#0e6f58","Wraithbone & spirit-stone",{img:"Eldar_Rune.webp",bg:"#070b0e",bgGlow:"#0f2a2a"}),
+  // Loyalist Astartes (Liber Astartes)
+  A("loyalist","loyalist","Loyalist Astartes","#d8b35a","#6e5418","Imperial gold & midnight"),
+  A("loyalist","dark-angels","Dark Angels","#2f9e63","#12502f","The First, Caliban green"),
+  A("loyalist","white-scars","White Scars","#d4554a","#6e211a","Chogorian lightning"),
+  A("loyalist","space-wolves","Space Wolves","#84b6d6","#2d5a78","Fenrisian storm-grey"),
+  A("loyalist","imperial-fists","Imperial Fists","#f0bf3e","#806012","Phalanx gold"),
+  A("loyalist","blood-angels","Blood Angels","#e23b3b","#7a1414","Baal crimson & gold"),
+  A("loyalist","iron-hands","Iron Hands","#aab2c0","#474f5b","Medusan black iron"),
+  A("loyalist","ultramarines","Ultramarines","#3f72d6","#1c3a82","Macragge blue & gold"),
+  A("loyalist","salamanders","Salamanders","#2aa85c","#114e2a","Nocturne green & flame"),
+  A("loyalist","raven-guard","Raven Guard","#c3c9d4","#3c434f","Deliverance shadow"),
+  // Traitor Astartes (Liber Hereticus)
+  A("traitor","traitor","Traitor Astartes","#c0392b","#5e1810","Crimson, black & brass"),
+  A("traitor","sons-of-horus","Sons of Horus","#4aa389","#155848","Cthonian sea-green"),
+  A("traitor","death-guard","Death Guard","#b3bd72","#565c2f","Barbaran rot & rust"),
+  A("traitor","emperors-children","Emperor's Children","#b06fd6","#57298a","Chemos purple & gold"),
+  A("traitor","iron-warriors","Iron Warriors","#adb3bd","#474d57","Olympian iron & hazard"),
+  A("traitor","night-lords","Night Lords","#5d72d4","#232c70","Nostraman midnight"),
+  A("traitor","world-eaters","World Eaters","#d23b3b","#6e1414","Blood & brass"),
+  A("traitor","thousand-sons","Thousand Sons","#d8492e","#7a2010","Prosperan crimson & gold"),
+  A("traitor","word-bearers","Word Bearers","#9e3b3b","#4e1a1a","Colchisian dark red"),
+  A("traitor","alpha-legion","Alpha Legion","#2bb0a6","#115a54","Hydra turquoise & scales"),
+  // Generic
+  A("generic","neutral","Neutral","#8fb4d6","#33536f","Unaligned steel")
 ];
+const ARMY_MAP={}; ARMIES.forEach(a=>ARMY_MAP[a.id]=a);
 const SKIN_KEY="asuryani_skin";
+let curArmy="asuryani";
+
 function applySkin(id){
-  const s=SKINS.find(x=>x.id===id)||SKINS[0];
-  document.documentElement.setAttribute("data-skin",s.id);
-  try{localStorage.setItem(SKIN_KEY,s.id);}catch(e){}
-  const lbl=document.getElementById("skinLabel"); if(lbl) lbl.textContent=s.name;
+  const a=ARMY_MAP[id]||ARMIES[0];
+  const g=GROUPS[a.g], accent=a.c[0], accentD=a.c[1];
+  const bg=a.bg||g.bg, bgGlow=a.bgGlow||_dark(accent,.30);
+  const vars={
+    "--bg":bg,"--bg-glow":bgGlow,"--panel":g.panel,"--panel2":g.panel2,
+    "--line":g.line,"--edge":g.edge,"--bone":g.bone,"--muted":g.muted,"--dim":g.dim,
+    "--amber":g.amber,"--red":g.red,"--green":g.green,
+    "--teal":accent,"--teal-d":accentD,"--blue":accent,"--accent":accent,"--accent-d":accentD,
+    "--glow":_rgba(accent,.16),"--glow-strong":_rgba(accent,.34)
+  };
+  const rs=document.documentElement.style;
+  for(const k in vars) rs.setProperty(k,vars[k]);
+  document.documentElement.setAttribute("data-skin",a.g);
+  curArmy=a.id;
+  try{localStorage.setItem(SKIN_KEY,a.id);}catch(e){}
+  const lbl=document.getElementById("skinLabel"); if(lbl) lbl.textContent=a.name;
+  const gem=document.querySelector("#skinBtn .gem");
+  if(gem){gem.style.setProperty("--g",accent);gem.style.setProperty("--gd",accentD);}
   const crest=document.getElementById("crest");
-  if(crest){ if(s.img){crest.innerHTML=`<img src="${s.img}" alt="">`;} else {crest.textContent=s.crest;} }
-  const army=document.getElementById("armyName"); if(army) army.textContent=s.name;
-  const tc=document.querySelector('meta[name="theme-color"]');
-  if(tc) tc.setAttribute("content",getComputedStyle(document.body).getPropertyValue("--bg").trim()||"#070b0e");
+  if(crest){ if(a.img){crest.innerHTML=`<img src="${a.img}" alt="">`;} else {crest.textContent=a.crest||g.glyph;} }
+  const army=document.getElementById("armyName"); if(army) army.textContent=a.name;
+  const tc=document.querySelector('meta[name="theme-color"]'); if(tc) tc.setAttribute("content",bg);
   renderSkinMenu();
 }
 function renderSkinMenu(){
   const menu=document.getElementById("skinMenu"); if(!menu) return;
-  const cur=document.documentElement.getAttribute("data-skin");
-  menu.innerHTML=SKINS.map(s=>`<button data-skin="${s.id}" aria-current="${s.id===cur}">
-    <span class="gem"></span><span style="flex:1"><span style="display:block">${s.name}</span>
-    <span style="display:block;font-size:10.5px;color:var(--muted)">${s.sub}</span></span>
-    ${s.id===cur?'✓':''}</button>`).join("");
-  menu.querySelectorAll("[data-skin]").forEach(b=>b.onclick=()=>{
-    applySkin(b.dataset.skin); menu.classList.remove("show");
+  menu.innerHTML=GROUP_ORDER.map(gk=>{
+    const g=GROUPS[gk], rows=ARMIES.filter(a=>a.g===gk);
+    const open=rows.some(a=>a.id===curArmy);
+    return `<details class="armgrp" ${open?"open":""}>
+      <summary><span class="gchev">▸</span>${g.label}<span class="gcount">${rows.length}</span></summary>
+      ${rows.map(a=>`<button class="armrow" data-army="${a.id}" aria-current="${a.id===curArmy}"
+        style="--g:${a.c[0]};--gd:${a.c[1]}">
+        <span class="gem"></span>
+        <span class="al"><span class="an">${a.name}</span><span class="as">${a.sub}</span></span>
+        ${a.id===curArmy?'<span class="ck">✓</span>':""}</button>`).join("")}
+    </details>`;
+  }).join("");
+  menu.querySelectorAll("[data-army]").forEach(b=>b.onclick=()=>{
+    applySkin(b.dataset.army); menu.classList.remove("show");
   });
 }
 function initSkinPicker(){
@@ -1212,7 +1297,7 @@ function initSkinPicker(){
   btn.onclick=e=>{e.stopPropagation();menu.classList.toggle("show");};
   document.addEventListener("click",e=>{if(!e.target.closest(".skinpick"))menu.classList.remove("show");});
   let saved="asuryani"; try{saved=localStorage.getItem(SKIN_KEY)||"asuryani";}catch(e){}
-  applySkin(saved);
+  applySkin(ARMY_MAP[saved]?saved:"asuryani");
 }
 
 // ---------- boot ----------
