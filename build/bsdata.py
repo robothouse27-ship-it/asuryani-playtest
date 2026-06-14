@@ -282,49 +282,88 @@ def list_key(name):  # app parser keys on a slug ending in "-list"; name ends " 
     if not re.search(r"\bList$",n,re.I): n+=" List"
     return slug(n), n
 
-def harvest_wargear(unit_entry, idx, weap_ids, gear_ids, wlists):
-    """Walk a unit's models and emit app `options` text (list pickers + priced
-    single add-ons). Genuine shared equipment lists are reached via entryLink to a
-    global group (Legion Pistols, Frost Blades, ...); inline groups ("Bolt Pistol",
-    "May exchange bolter for:", "Options") are transparent wrappers we recurse
-    through, so their default weapons never masquerade as list names."""
-    opts=[]; used=set()  # keys of lists this unit references
+# A group that represents a single pick-one choice ("may exchange their bolter for:").
+CHOICE_PREFIX=re.compile(r"^(may exchange|may replace|may take one|may have one|"
+                         r"may have (?:their|its)|1 in \d)",re.I)
+def wrapper_weapon(name):
+    """The weapon being swapped, from a choice-wrapper name."""
+    m=re.search(r"(?:exchange|replace)\s+(?:their\s+|its\s+)?(.+?)\s+(?:for|with)",name or "",re.I) \
+      or re.search(r"have\s+(?:their\s+|its\s+)?(.+?)\s+exchanged",name or "",re.I)
+    return (m.group(1).strip() if m else "")
+def direct_leaves(grp, idx):
+    """(name, points) for selectionEntry leaves directly under a group (not nested
+    groups) — the inline alternatives offered by an exchange wrapper."""
+    out=[]
+    for wrap in ("selectionEntries","entryLinks"):
+        for ch in grp.findall(NS+wrap+"/*"):
+            tgt=_resolve(ch, idx)
+            if lt(tgt)=="selectionEntryGroup": continue
+            nm=fix_caps((ch.get("name") or tgt.get("name") or "").strip())
+            if nm and not any(nm==o[0] for o in out): out.append((nm,_opt_cost(ch,tgt)))
+    return out
+def choice_label(model, wrapper_name, items):
+    """Readable dropdown name: the swapped weapon if known, else a shared trailing
+    word of the options (Bayonet / Chain bayonet -> 'Bayonet'), else 'Equipment'."""
+    wn=wrapper_weapon(wrapper_name)
+    if not wn:
+        tails={(nm.split()[-1].lower() if nm.split() else "") for nm,_ in items}
+        wn=items[0][0].split()[-1] if len(tails)==1 and items else "Equipment"
+    cap=" ".join(w[:1].upper()+w[1:] for w in wn.split())  # "bolt pistol" -> "Bolt Pistol"
+    return fix_caps(f"{model} {cap}")
+
+def harvest_wargear(unit_entry, idx, weap_ids, gear_ids, wlists, unit_name=""):
+    """Emit app `options` text as categorised pick-one dropdowns plus a few priced
+    extras. Each weapon *choice* (an exchange wrapper, or a shared weapon group such
+    as Legion Pistols) becomes its own dropdown; only genuine standalone upgrades
+    (Vexilla, Melta bombs, Nuncio-vox via Legion Equipment) stay as +pts toggles."""
+    opts=[]; used=set(); uslug=slug(unit_name)
     def model_name(m): return fix_caps((m.get("name") or "Model").strip())
-    def register(name, items):
-        key,label=list_key(name)
-        clean=[{"name":nm,"points":p} for nm,p in items if nm]
-        if key not in wlists: wlists[key]={"name":label,"items":clean}
-        used.add(key); return label
+    def add_dropdown(model, key, label, items, verb):
+        if len(items)<2: return False
+        if key not in wlists:
+            wlists[key]={"name":label,"items":[{"name":n,"points":p} for n,p in items if n]}
+        used.add(key); opts.append(f"The {model} {verb} the {label}"); return True
     def walk(model, el, seen, depth=0):
-        if depth>6: return
+        if depth>7: return
         for wrap in ("selectionEntryGroups","entryLinks","selectionEntries"):
             for ch in el.findall(NS+wrap+"/*"):
-                via_link = lt(ch)=="entryLink"
+                via_link=lt(ch)=="entryLink"
                 tgt=_resolve(ch, idx)
-                nm=(ch.get("name") or tgt.get("name") or "").strip()
-                if nm.lower() in NOISE_GROUPS: continue
+                nm=(ch.get("name") or tgt.get("name") or "").strip(); low=nm.lower()
+                if low in NOISE_GROUPS: continue
                 if lt(tgt)=="selectionEntryGroup":
                     gid=tgt.get("id")
                     if gid and gid in seen: continue
+                    nseen=seen|({gid} if gid else set())
+                    if slug(nm) in weap_ids or low in ("options","option"):
+                        walk(model,tgt,nseen,depth+1); continue   # default-weapon / generic container
                     items=flatten_group(tgt, idx)
-                    # shared, link-referenced, weapon-y group with a real name -> a List
-                    if via_link and not re.match(r"^(may |1 in|up to|option|choose|select)",
-                                                 nm.lower()) and is_wargear_list(items,weap_ids,gear_ids):
-                        opts.append(f"The {model} may select one item from the {register(nm,items)}")
-                    else:  # inline/transparent wrapper: descend
-                        walk(model, tgt, seen|({gid} if gid else set()), depth+1)
-                else:  # leaf selectionEntry: a priced single upgrade
+                    if CHOICE_PREFIX.match(low):                   # pick-one choice
+                        leaves=[(n,p) for n,p in direct_leaves(tgt,idx) if n.lower() not in NOISE_GROUPS]
+                        wn=wrapper_weapon(nm)
+                        # app keys the list off slug(label) in the option text, so the
+                        # label itself must be unique enough — model + weapon slot.
+                        k,lab=list_key(choice_label(model,nm,leaves or items))
+                        verb=f"may exchange their {wn} — select from" if wn else "may select one item from"
+                        add_dropdown(model,k,lab,leaves,verb)
+                        walk(model,tgt,nseen,depth+1)             # nested shared groups -> own dropdowns
+                    elif via_link and is_wargear_list(items,weap_ids,gear_ids):  # shared weapon list
+                        k,lab=list_key(nm)
+                        add_dropdown(model,k,lab,items,"may select one item from")
+                    else:
+                        walk(model,tgt,nseen,depth+1)
+                else:
                     c=_opt_cost(ch,tgt)
                     if c>0 and nm: opts.append(f"The {model} may take {fix_caps(nm)} for +{c} points")
     for m in unit_entry.findall(NS+"selectionEntries/"+NS+"selectionEntry"):
         if m.get("type")!="model": continue
         walk(model_name(m), m, set())
-    # drop priced singles already offered inside a referenced list (no double-listing)
+    # drop priced singles already offered inside a dropdown (no double-listing)
     covered={slug(it["name"]) for k in used for it in wlists.get(k,{}).get("items",[])}
     out=[]
     for o in opts:
-        m=re.match(r"The .+ may take (.+) for \+\d+ points$", o)
-        if m and slug(m.group(1)) in covered: continue
+        mt=re.match(r"The .+ may take (.+) for \+\d+ points$", o)
+        if mt and slug(mt.group(1)) in covered: continue
         if o not in out: out.append(o)
     return out
 
@@ -416,7 +455,7 @@ def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None):
             if rules: sr["_"]=sorted(x for x in rules if x)
             wopts=[]
             if not PILOT_WARGEAR or sid in PILOT_WARGEAR:
-                wopts=harvest_wargear(entry,idx,weap_ids,gear_ids,wlists)
+                wopts=harvest_wargear(entry,idx,weap_ids,gear_ids,wlists,name)
             units[sid]={
                 "id":sid,"name":name,"slot":find_slot(entry,idx) or "Unsorted",
                 "composition":comp,
