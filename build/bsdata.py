@@ -237,6 +237,97 @@ def collect_equipment(entry, idx, seen, depth=0):
             w2,g2,r2=collect_equipment(el,idx,seen,depth+1); we|=w2; wg|=g2; rules|=r2
     return we,wg,rules
 
+# ---- selectable wargear (equipment-list style) ----
+# Cross-legion / campaign options that bleed in from the generic Legiones Astartes
+# template; these are not wargear a Space Wolves player picks on a datasheet.
+NOISE_GROUPS = {
+    "mutable tactics","oath(s) of moment","oaths of moment","prime unit","prime benefits",
+    "shattered legion armoury selection","prosperine arcana","cult arcana",
+    "characteristics increased","choose one","surgical augments","weapons of desperation",
+    "legion specific upgrade",
+}
+def _resolve(el, idx):
+    if lt(el)=="entryLink":
+        tid=el.get("targetId")
+        return idx.entry.get(tid) or idx.group.get(tid) or el
+    return el
+def _opt_cost(link, tgt):
+    return _point_cost(link) or _point_cost(tgt)
+
+def flatten_group(group, idx, seen=None, depth=0):
+    """Leaf (name, points) options under a group, resolving nested group refs."""
+    if seen is None: seen=set()
+    out=[]; gid=group.get("id")
+    if depth>5 or (gid and gid in seen): return out
+    if gid: seen=seen|{gid}
+    for wrap in ("selectionEntries","selectionEntryGroups","entryLinks"):
+        for ch in group.findall(NS+wrap+"/*"):
+            tgt=_resolve(ch, idx)
+            if lt(tgt)=="selectionEntryGroup":
+                out+=flatten_group(tgt, idx, seen, depth+1)
+            else:
+                nm=fix_caps((ch.get("name") or tgt.get("name") or "").strip())
+                if nm and not any(nm==o[0] for o in out): out.append((nm,_opt_cost(ch,tgt)))
+    return out
+
+def is_wargear_list(items, weap_ids, gear_ids):
+    """A group is a real equipment list if most leaves are known weapons/wargear or
+    priced upgrades (a costed option is by definition selectable wargear)."""
+    if len(items)<2: return False
+    hits=sum(1 for nm,p in items if p>0 or slug(nm) in weap_ids or slug(nm) in gear_ids)
+    return hits/len(items) >= 0.5
+
+def list_key(name):  # app parser keys on a slug ending in "-list"; name ends " List"
+    n=re.sub(r"\s+"," ",name.strip())
+    if not re.search(r"\bList$",n,re.I): n+=" List"
+    return slug(n), n
+
+def harvest_wargear(unit_entry, idx, weap_ids, gear_ids, wlists):
+    """Walk a unit's models and emit app `options` text (list pickers + priced
+    single add-ons). Genuine shared equipment lists are reached via entryLink to a
+    global group (Legion Pistols, Frost Blades, ...); inline groups ("Bolt Pistol",
+    "May exchange bolter for:", "Options") are transparent wrappers we recurse
+    through, so their default weapons never masquerade as list names."""
+    opts=[]; used=set()  # keys of lists this unit references
+    def model_name(m): return fix_caps((m.get("name") or "Model").strip())
+    def register(name, items):
+        key,label=list_key(name)
+        clean=[{"name":nm,"points":p} for nm,p in items if nm]
+        if key not in wlists: wlists[key]={"name":label,"items":clean}
+        used.add(key); return label
+    def walk(model, el, seen, depth=0):
+        if depth>6: return
+        for wrap in ("selectionEntryGroups","entryLinks","selectionEntries"):
+            for ch in el.findall(NS+wrap+"/*"):
+                via_link = lt(ch)=="entryLink"
+                tgt=_resolve(ch, idx)
+                nm=(ch.get("name") or tgt.get("name") or "").strip()
+                if nm.lower() in NOISE_GROUPS: continue
+                if lt(tgt)=="selectionEntryGroup":
+                    gid=tgt.get("id")
+                    if gid and gid in seen: continue
+                    items=flatten_group(tgt, idx)
+                    # shared, link-referenced, weapon-y group with a real name -> a List
+                    if via_link and not re.match(r"^(may |1 in|up to|option|choose|select)",
+                                                 nm.lower()) and is_wargear_list(items,weap_ids,gear_ids):
+                        opts.append(f"The {model} may select one item from the {register(nm,items)}")
+                    else:  # inline/transparent wrapper: descend
+                        walk(model, tgt, seen|({gid} if gid else set()), depth+1)
+                else:  # leaf selectionEntry: a priced single upgrade
+                    c=_opt_cost(ch,tgt)
+                    if c>0 and nm: opts.append(f"The {model} may take {fix_caps(nm)} for +{c} points")
+    for m in unit_entry.findall(NS+"selectionEntries/"+NS+"selectionEntry"):
+        if m.get("type")!="model": continue
+        walk(model_name(m), m, set())
+    # drop priced singles already offered inside a referenced list (no double-listing)
+    covered={slug(it["name"]) for k in used for it in wlists.get(k,{}).get("items",[])}
+    out=[]
+    for o in opts:
+        m=re.match(r"The .+ may take (.+) for \+\d+ points$", o)
+        if m and slug(m.group(1)) in covered: continue
+        if o not in out: out.append(o)
+    return out
+
 def composition(entry, idx):
     for se in entry.findall(NS+"selectionEntries/"+NS+"selectionEntry"):
         if se.get("type")=="model":
@@ -290,8 +381,14 @@ def nested_unit_ids(army_roots):
                 if ch.get("type")=="unit": nested.add(ch.get("id"))
     return nested
 
-def build_units(idx, army_roots):
+# Pilot: only these units get selectable wargear extracted for now. Empty set ->
+# all units (pass 2, once the equipment-list shape is reviewed in-app).
+PILOT_WARGEAR = {"tactical-squad","grey-slayer-pack","praetor"}
+
+def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None):
     units={}
+    weap_ids=weap_ids or set(); gear_ids=gear_ids or set()
+    wlists=wlists if wlists is not None else {}
     nested=nested_unit_ids(army_roots)
     for root in army_roots:
         for entry in root.iter(NS+"selectionEntry"):
@@ -317,12 +414,15 @@ def build_units(idx, army_roots):
             if allgear: wargear["_"]=allgear
             sr={}
             if rules: sr["_"]=sorted(x for x in rules if x)
+            wopts=[]
+            if not PILOT_WARGEAR or sid in PILOT_WARGEAR:
+                wopts=harvest_wargear(entry,idx,weap_ids,gear_ids,wlists)
             units[sid]={
                 "id":sid,"name":name,"slot":find_slot(entry,idx) or "Unsorted",
                 "composition":comp,
                 "baseCost":f"{pts} points" if pts else "","pointsValue":pts,
                 "sizeRules":size,"lore":[],"profiles":profs,
-                "wargear":wargear,"specialRules":sr,"traits":[],"types":{},"options":[],
+                "wargear":wargear,"specialRules":sr,"traits":[],"types":{},"options":wopts,
             }
     folded=collapse_variants(units)
     if folded: print(f"  collapsed {folded} variant units into base + options")
@@ -342,9 +442,12 @@ def main():
 
     weapons=harvest_weapons(idx)
     glossary=harvest_glossary(idx)
+    weap_ids=set(weapons.keys())
+    gear_ids={slug(n) for n in glossary.get("wargear",{})}
     # army units = Legiones Astartes common pool + this Legion's catalogue
     la=[r for r in idx.roots if r.get("name","").strip().endswith("Legiones Astartes")]
-    units=build_units(idx,[legion_root]+la)
+    wlists={}
+    units=build_units(idx,[legion_root]+la,weap_ids,gear_ids,wlists)
 
     root=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out=os.path.join(root,"data_"+aid)
@@ -360,7 +463,7 @@ def main():
     def shared(name):
         return json.load(open(os.path.join(root,"data",name),encoding="utf-8"))
     bundle={
-        "weapons":weapon_list,"wargearLists":{},
+        "weapons":weapon_list,"wargearLists":wlists,
         "slots":shared("slots.json"),"detachments":shared("detachments.json"),
         "glossary":glossary,"units":unit_list,
         "meta":{"name":f"{legion} — Horus Heresy 3.0","army":aid},
