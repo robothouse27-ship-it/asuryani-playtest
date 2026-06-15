@@ -243,6 +243,13 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .rentry.open .body{display:block}
 .cfg{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}
 .cfg label{font-size:11.5px;letter-spacing:.3px;color:var(--muted);min-width:74px}
+.wgroup{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);
+  margin:13px 0 2px;padding-bottom:3px;border-bottom:1px solid var(--line);font-weight:600}
+.wgroup:first-child{margin-top:4px}
+.optck{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--bone);
+  margin:5px 14px 5px 0;cursor:pointer}
+.optck input{accent-color:var(--accent);width:15px;height:15px}
+.optck .pts{color:var(--dim);font-size:11px;font-family:var(--font-mono)}
 .stepper{display:flex;align-items:center;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .stepper button{background:var(--panel2);border:none;color:var(--bone);width:29px;height:29px;font-size:15px;transition:.12s}
 .stepper button:hover{background:var(--accent-d);color:var(--bone)}
@@ -586,6 +593,17 @@ function initEngine(){
   R = blank();
 }
 
+// which model an option belongs to, for grouping ("The Sergeant may…" → Sergeant;
+// "Any model / One Legionary / Up to two…" → Squad-wide)
+function optModel(opt){
+  const m=(opt||"").match(/^The ([A-Z][\w'’ \-]+?) (?:may|with|in|is)\b/);
+  return m ? m[1].trim() : "Squad";
+}
+// the default weapon a "select from" option exchanges, for the dropdown placeholder
+function optKeep(opt){
+  const m=(opt||"").match(/exchange their ([\w '’\-\/]+?)\s*(?:—|-|select|for)/i);
+  return m ? m[1].trim() : "";
+}
 // parse points modifiers from a unit's text
 function parseModel(u){
   const out={base:u.pointsValue||0, baseCount:1, perModel:0, maxExtra:0, addons:[], lists:[]};
@@ -595,18 +613,24 @@ function parseModel(u){
       let m=seg.match(/up to (\d+) additional.*?\+\s*(\d+)\s*points?\s*per model/i);
       if(m){out.maxExtra=Math.max(out.maxExtra,+m[1]); out.perModel=out.perModel||+m[2];}
       m=seg.match(/up to (\d+)\s+([A-Z][\w '’]+?)\s+(?:for|at)\s*\+\s*(\d+)\s*points/i);
-      if(m && !/^additional/i.test(m[2].trim())){out.addons.push({name:m[2].trim(),pts:+m[3],qty:0,max:+m[1]});}
+      if(m && !/^additional/i.test(m[2].trim())){out.addons.push({name:m[2].trim(),pts:+m[3],qty:0,max:+m[1],model:"Squad"});}
       m=seg.match(/may include up to 1\s+([\w '’]+?)\s+(?:for|at)\s*\+\s*(\d+)\s*points/i);
       if(m && !out.addons.some(a=>a.name.toLowerCase()===m[1].trim().toLowerCase()))
-        out.addons.push({name:m[1].trim(),pts:+m[2],qty:0,max:1});
+        out.addons.push({name:m[1].trim(),pts:+m[2],qty:0,max:1,model:"Squad"});
     });
   });
   // wargear lists referenced in options
   (u.options||[]).forEach(opt=>{
+    const model=optModel(opt);
     const lm=opt.match(/from the ([\w '’\-]+? List)/i);
-    if(lm){const key=slug(lm[1]); if(G.wargearLists[key]) out.lists.push({key,label:lm[1],opt});}
+    if(lm){const key=slug(lm[1]); if(G.wargearLists[key]) out.lists.push({key,label:lm[1],opt,model,keep:optKeep(opt)});}
     const ex=opt.match(/\+\s*(\d+)\s*points/i); // inline-priced single options
-    if(ex && !lm){out.addons.push({name:opt.replace(/\s*\(.*?\)/g,'').slice(0,60),pts:+ex[1],qty:0,max:1,opt});}
+    if(ex && !lm){
+      let name=opt.replace(/^.*?\bmay (?:take|be upgraded with|have|select)\s+(?:a |an |one |their )?/i,"")
+                  .replace(/\s+for \+\d+\s*points.*/i,"").replace(/\s*\(.*?\)/g,"").trim()||opt.slice(0,40);
+      name=name.charAt(0).toUpperCase()+name.slice(1);
+      out.addons.push({name,pts:+ex[1],qty:0,max:1,opt,model});
+    }
   });
   return out;
 }
@@ -791,7 +815,7 @@ function entryHTML(e,p){
   const u=unitMap[e.id],m=e._m;
   let cfg="";
   // clickable loadout reference — weapons/wargear + special rules open glossary tips inline
-  const wgear=Object.values(u.wargear||{}).flat().filter(Boolean);
+  const wgear=[...new Set(Object.values(u.wargear||{}).flat().filter(Boolean))];
   const srules=Object.values(u.specialRules||{}).flat().filter(x=>x&&x!=="None");
   const traits=(u.traits||[]).filter(Boolean);
   if(wgear.length||srules.length||traits.length){
@@ -806,17 +830,30 @@ function entryHTML(e,p){
       <button data-dec="${e.uid}">−</button><span class="n">${e.size}</span><button data-inc="${e.uid}">+</button></div>
       <span style="color:var(--dim);font-size:11px">${m.baseCount}–${m.baseCount+m.maxExtra} · +${m.perModel}/model</span></div>`;
   }
-  m.addons.forEach((a,i)=>{
-    cfg+=`<div class="cfg"><label>${a.name}</label><div class="stepper">
-      <button data-adec="${e.uid}:${i}">−</button><span class="n">${e.addons[i]||0}</span><button data-ainc="${e.uid}:${i}">+</button></div>
-      <span style="color:var(--dim);font-size:11px">+${a.pts}${a.max>1?' ea · max '+a.max:''}</span></div>`;
-  });
-  m.lists.forEach((L,i)=>{
-    const items=G.wargearLists[L.key].items;
-    cfg+=`<div class="optnote">${L.opt}</div><div class="cfg"><label>${L.label.replace(/ List$/,'')}</label>
-      <select data-gear="${e.uid}" data-lk="${L.key}"><option value="">— add item —</option>`+
-      items.map(it=>`<option value="${it.name}|${it.points}">${it.name} (+${it.points})</option>`).join("")+
-      `</select></div>`;
+  // group the wargear choices under the model they belong to (Sergeant, Squad…)
+  const groups={}, order=[];
+  const bucket=md=>{ if(!groups[md]){groups[md]=[]; order.push(md);} return groups[md]; };
+  m.addons.forEach((a,i)=>bucket(a.model||"Squad").push({t:"a",a,i}));
+  m.lists.forEach((L)=>bucket(L.model||"Squad").push({t:"l",L}));
+  order.sort((x,y)=>(x==="Squad")-(y==="Squad")); // leaders first, squad-wide last
+  order.forEach(md=>{
+    if(order.length>1 || md!=="Squad") cfg+=`<div class="wgroup">${md}</div>`;
+    const items=groups[md].slice().sort((p,q)=>(p.t==="l"?0:1)-(q.t==="l"?0:1)); // weapon lists first
+    items.forEach(it=>{
+      if(it.t==="l"){const L=it.L, list=G.wargearLists[L.key].items, ph=L.keep?`— keep ${L.keep} —`:"— add item —";
+        cfg+=`<div class="cfg"><label>${L.label.replace(/ List$/,'').replace(/^Legion /,'')}</label>
+          <select data-gear="${e.uid}" data-lk="${L.key}"><option value="">${ph}</option>`+
+          list.map(it2=>`<option value="${it2.name}|${it2.points}">${it2.name} (+${it2.points})</option>`).join("")+
+          `</select></div>`;
+      } else if(it.a.max>1){const a=it.a,i=it.i;
+        cfg+=`<div class="cfg"><label>${a.name}</label><div class="stepper">
+          <button data-adec="${e.uid}:${i}">−</button><span class="n">${e.addons[i]||0}</span><button data-ainc="${e.uid}:${i}">+</button></div>
+          <span style="color:var(--dim);font-size:11px">+${a.pts} ea · max ${a.max}</span></div>`;
+      } else {const a=it.a,i=it.i;
+        cfg+=`<label class="optck"><input type="checkbox" data-atog="${e.uid}:${i}" ${e.addons[i]?"checked":""}>
+          <span>${a.name}</span><span class="pts">+${a.pts}</span></label>`;
+      }
+    });
   });
   if(e.gear&&e.gear.length){
     cfg+=`<div class="cfg" style="gap:6px"><label>Selected</label><div style="flex:1">`+
@@ -882,6 +919,7 @@ function bindRoster(){
   root.querySelectorAll("[data-dec]").forEach(b=>b.onclick=()=>{const e=find(b.dataset.dec);if(e.size>e._m.baseCount){e.size--;renderRoster();}});
   root.querySelectorAll("[data-ainc]").forEach(b=>b.onclick=()=>{const[uid,i]=b.dataset.ainc.split(":");const e=find(uid);if((e.addons[i]||0)<e._m.addons[i].max){e.addons[i]=(e.addons[i]||0)+1;renderRoster();}});
   root.querySelectorAll("[data-adec]").forEach(b=>b.onclick=()=>{const[uid,i]=b.dataset.adec.split(":");const e=find(uid);if(e.addons[i]>0){e.addons[i]--;renderRoster();}});
+  root.querySelectorAll("[data-atog]").forEach(c=>c.onchange=()=>{const[uid,i]=c.dataset.atog.split(":");const e=find(uid);e.addons[i]=c.checked?1:0;renderRoster();});
   root.querySelectorAll("[data-gear]").forEach(s=>s.onchange=()=>{if(!s.value)return;const e=find(s.dataset.gear);const[name,pts]=s.value.split("|");e.gear.push({name,pts:+pts,qty:1});renderRoster();});
   root.querySelectorAll("[data-gdel]").forEach(a=>a.onclick=()=>{const[uid,gi]=a.dataset.gdel.split(":");const e=find(uid);e.gear.splice(+gi,1);renderRoster();});
   root.querySelectorAll("[data-adj]").forEach(inp=>inp.onchange=()=>{const e=find(inp.dataset.adj);e.adjust=+inp.value||0;renderRoster();});
