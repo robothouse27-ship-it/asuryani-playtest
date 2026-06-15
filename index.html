@@ -299,6 +299,10 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
   display:flex;align-items:center;gap:6px}
 .roleline::after{content:"";flex:1;height:1px;background:var(--line)}
 .roleline .rc{color:var(--dim);font-family:var(--font-mono);letter-spacing:0}
+.unlx{font-size:10.5px;color:var(--dim);margin:-2px 2px 6px;letter-spacing:.2px}
+.unlx.on{color:var(--green)}
+.addrow label .ok{color:var(--green);font-size:10.5px;margin-left:5px}
+.addrow label .why{color:var(--dim);font-size:10.5px;margin-left:5px;font-style:italic}
 .slotempty{display:inline-flex;align-items:center;gap:6px;border:1px dashed var(--line);border-radius:9px;
   padding:7px 12px;font-size:12px;color:var(--dim);margin:0 6px 6px 0;background:#00000026;transition:.15s var(--ease)}
 .slotempty.hl{border-color:var(--accent);color:var(--accent);cursor:pointer;background:var(--glow);
@@ -774,7 +778,14 @@ function renderRoster(){
     order.forEach(role=>{
       const slots=d.slots.filter(s=>s.role===role);
       const filled=slots.filter(s=>s.entry).length;
-      html+=`<div class="roleline">${role}<span class="rc">${filled}/${slots.length}</span></div>`;
+      let unl="";
+      if(role==="High Command") unl=filled
+        ?`<div class="unlx on">↳ unlocks ${filled} Apex / Auxiliary detachment${filled>1?"s":""}</div>`
+        :`<div class="unlx">↳ fill to unlock an Apex or Auxiliary detachment</div>`;
+      else if(role==="Command") unl=filled
+        ?`<div class="unlx on">↳ unlocks ${filled} Auxiliary detachment${filled>1?"s":""}</div>`
+        :`<div class="unlx">↳ fill to unlock an Auxiliary detachment</div>`;
+      html+=`<div class="roleline">${role}<span class="rc">${filled}/${slots.length}</span></div>${unl}`;
       slots.forEach(s=>{
         if(s.entry){const p=entryPoints(s.entry); html+=entryHTML(s.entry,p);}
       });
@@ -797,12 +808,13 @@ function addBarHTML(){
   const aux=(DET.auxiliary||[]), apex=(DET.apex||[]);
   const opt=arr=>arr.map(t=>`<option value="${t.id}">${t.name}${t.verify?" ⚠":""}</option>`).join("");
   const lowOK=canAdd("lordOfWar"), wlOK=canAdd("warlord");
-  return `<div class="addbar"><div class="ttl">Add detachment
-      <span class="u">Auxiliary: ${u.auxFree} · Apex: ${u.apexFree} available</span></div>
-    <div class="addrow"><label>Auxiliary</label>
+  const auxWhy=u.auxFree>0?`<span class="ok">${u.auxFree} available</span>`:`<span class="why">fill a Command or High Command slot to unlock</span>`;
+  const apexWhy=u.apexFree>0?`<span class="ok">${u.apexFree} available</span>`:`<span class="why">fill a High Command slot to unlock</span>`;
+  return `<div class="addbar"><div class="ttl">Add detachment</div>
+    <div class="addrow"><label>Auxiliary ${auxWhy}</label>
       <select id="selAux">${opt(aux)}</select>
       <button class="ab" id="addAux" ${u.auxFree>0?"":"disabled"}>Add</button></div>
-    <div class="addrow"><label>Apex</label>
+    <div class="addrow"><label>Apex ${apexWhy}</label>
       <select id="selApex">${opt(apex)}</select>
       <button class="ab" id="addApex" ${u.apexFree>0?"":"disabled"}>Add</button></div>
     <div class="addextra">
