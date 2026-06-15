@@ -246,6 +246,8 @@ NOISE_GROUPS = {
     "characteristics increased","choose one","surgical augments","weapons of desperation",
     "legion specific upgrade",
 }
+# Cross-faction rules that bleed onto the generic Legion datasheet template.
+NOISE_RULES = {"aberrant","clone","cult arcana","mutable tactics"}
 def _resolve(el, idx):
     if lt(el)=="entryLink":
         tid=el.get("targetId")
@@ -253,6 +255,14 @@ def _resolve(el, idx):
     return el
 def _opt_cost(link, tgt):
     return _point_cost(link) or _point_cost(tgt)
+def _min(el):
+    for c in el.findall(NS+"constraints/"+NS+"constraint"):
+        if c.get("type")=="min":
+            try: return int(float(c.get("value")))
+            except: return 0
+    return 0
+def _is_weapon_el(el):
+    return any(p.get("typeName") in ("Ranged Weapon","Melee Weapon") for p in el.iter(NS+"profile"))
 
 def flatten_group(group, idx, seen=None, depth=0):
     """Leaf (name, points) options under a group, resolving nested group refs."""
@@ -367,6 +377,69 @@ def harvest_wargear(unit_entry, idx, weap_ids, gear_ids, wlists, unit_name=""):
         if o not in out: out.append(o)
     return out
 
+def default_loadout(unit_entry, idx, weap_ids, gear_ids, weap_name=None):
+    """Per-model DEFAULT loadout (like the Asuryani datasheets): the weapons each
+    model starts with, not the full swap menu. A default weapon shows up either as a
+    mandatory (min>=1) leaf, or as the 'their <weapon>' a choice wrapper exchanges."""
+    weap_name=weap_name or {}
+    def canon(nm):  # prefer the catalogue's canonical weapon spelling
+        c=weap_name.get(slug(nm)) or fix_caps(nm)
+        return c[:1].upper()+c[1:] if c else c
+    def leaf_name(ch, tgt):
+        nm=(ch.get("name") or tgt.get("name") or "").strip()
+        if nm and (slug(nm) in weap_ids or slug(nm) in gear_ids or _is_weapon_el(tgt)): return nm
+        return None
+    def collect(el, seen, depth=0):
+        got=[]
+        if depth>7: return got
+        for wrap in ("selectionEntries","selectionEntryGroups","entryLinks"):
+            for ch in el.findall(NS+wrap+"/*"):
+                tgt=_resolve(ch, idx); nm=(ch.get("name") or tgt.get("name") or "").strip()
+                low=nm.lower()
+                if low in NOISE_GROUPS: continue
+                if lt(tgt)=="selectionEntryGroup":
+                    gid=tgt.get("id")
+                    if gid and gid in seen: continue
+                    if CHOICE_PREFIX.match(low):
+                        wn=wrapper_weapon(nm)
+                        if wn: got.append(wn)         # the weapon being exchanged = the default
+                    else:
+                        got+=collect(tgt, seen|({gid} if gid else set()), depth+1)
+                elif _min(ch) or _min(tgt):
+                    w=leaf_name(ch,tgt)
+                    if w: got.append(w)
+        return got
+    unit_lvl=[]  # grenades etc. carried by every model
+    for wrap in ("entryLinks","selectionEntries"):
+        for ch in unit_entry.findall(NS+wrap+"/*"):
+            tgt=_resolve(ch, idx)
+            if lt(tgt)!="selectionEntryGroup" and (_min(ch) or _min(tgt)):
+                w=leaf_name(ch,tgt)
+                if w: unit_lvl.append(w)
+    out={}
+    for m in unit_entry.findall(NS+"selectionEntries/"+NS+"selectionEntry"):
+        if m.get("type")!="model": continue
+        seen=set(); dl=[]
+        for x in collect(m,set())+unit_lvl:
+            c=canon(x)
+            if c.lower() not in seen: seen.add(c.lower()); dl.append(c)
+        out[fix_caps((m.get("name") or "Model").strip())]=dl
+    return out
+
+def unit_rules(unit_entry, idx):
+    """The unit's own special rules — infoLinks on the unit and its models only, so
+    weapon special-rules and optional-wargear rules stay off the datasheet."""
+    out=[]
+    hosts=[unit_entry]+unit_entry.findall(NS+"selectionEntries/"+NS+"selectionEntry")
+    for host in hosts:
+        if host.get("type") not in (None,"unit","model"): continue
+        for il in host.findall(NS+"infoLinks/"+NS+"infoLink"):
+            r=idx.rule.get(il.get("targetId"))
+            if r is None: continue
+            nm=(r.get("name") or "").strip()
+            if nm and nm.lower() not in NOISE_RULES and nm not in out: out.append(nm)
+    return out
+
 def composition(entry, idx):
     for se in entry.findall(NS+"selectionEntries/"+NS+"selectionEntry"):
         if se.get("type")=="model":
@@ -424,9 +497,9 @@ def nested_unit_ids(army_roots):
 # all units (pass 2, once the equipment-list shape is reviewed in-app).
 PILOT_WARGEAR = {"tactical-squad","grey-slayer-pack","praetor"}
 
-def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None):
+def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None, weap_name=None):
     units={}
-    weap_ids=weap_ids or set(); gear_ids=gear_ids or set()
+    weap_ids=weap_ids or set(); gear_ids=gear_ids or set(); weap_name=weap_name or {}
     wlists=wlists if wlists is not None else {}
     nested=nested_unit_ids(army_roots)
     for root in army_roots:
@@ -445,17 +518,22 @@ def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None):
             if not profs: continue
             sid=slug(name)
             if sid in units: continue
-            we,wg,rules=collect_equipment(entry,idx,set())
             pts,comp,size=squad_economics(entry)
             if not comp: comp=composition(entry,idx)
-            wargear={}
-            allgear=sorted(we)+sorted(wg)
-            if allgear: wargear["_"]=allgear
-            sr={}
-            if rules: sr["_"]=sorted(x for x in rules if x)
             wopts=[]
             if not PILOT_WARGEAR or sid in PILOT_WARGEAR:
+                # decluttered datasheet (Asuryani-style): per-model default loadout +
+                # the unit's own rules; the full swap menu lives in the dropdowns.
+                wargear={k:v for k,v in default_loadout(entry,idx,weap_ids,gear_ids,weap_name).items() if v}
+                sr={"_":unit_rules(entry,idx)}
                 wopts=harvest_wargear(entry,idx,weap_ids,gear_ids,wlists,name)
+            else:
+                we,wg,rules=collect_equipment(entry,idx,set())
+                wargear={}
+                allgear=sorted(we)+sorted(wg)
+                if allgear: wargear["_"]=allgear
+                sr={}
+                if rules: sr["_"]=sorted(x for x in rules if x)
             units[sid]={
                 "id":sid,"name":name,"slot":find_slot(entry,idx) or "Unsorted",
                 "composition":comp,
@@ -482,11 +560,12 @@ def main():
     weapons=harvest_weapons(idx)
     glossary=harvest_glossary(idx)
     weap_ids=set(weapons.keys())
+    weap_name={sid:(r.get("Ranged Weapon") or r.get("Melee Weapon") or "") for sid,r in weapons.items()}
     gear_ids={slug(n) for n in glossary.get("wargear",{})}
     # army units = Legiones Astartes common pool + this Legion's catalogue
     la=[r for r in idx.roots if r.get("name","").strip().endswith("Legiones Astartes")]
     wlists={}
-    units=build_units(idx,[legion_root]+la,weap_ids,gear_ids,wlists)
+    units=build_units(idx,[legion_root]+la,weap_ids,gear_ids,wlists,weap_name)
 
     root=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     out=os.path.join(root,"data_"+aid)
