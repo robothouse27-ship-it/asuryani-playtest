@@ -255,6 +255,11 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .stepper button{background:var(--panel2);border:none;color:var(--bone);width:29px;height:29px;font-size:15px;transition:.12s}
 .stepper button:hover{background:var(--accent-d);color:var(--bone)}
 .stepper .n{min-width:36px;text-align:center;font-size:13px;font-family:var(--font-mono)}
+.upbox{background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:9px 11px;margin:6px 0}
+.upcap{font-size:12px;color:var(--muted);margin-bottom:6px}
+.uprow{display:flex;align-items:center;gap:10px;margin-top:6px}
+.uprow .upn{font-size:13px;flex:1}
+.uprow .upp{color:var(--dim);font-size:11px}
 .cfg select,.cfg input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--bone);
   border-radius:8px;padding:7px 9px;font-size:12.5px;transition:.15s}
 .cfg select:focus,.cfg input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
@@ -619,10 +624,22 @@ function optKeep(opt){
   const m=(opt||"").match(/exchange their ([\w '’\-\/]+?)\s*(?:—|-|select|for)/i);
   return m ? m[1].trim() : "";
 }
+// ---- structured upgrades (hand-authored) ----
+const upLimitIsOne=L=>L===1||L==="1";
+function upCap(up,size){ const L=up.limit;
+  if(L==="any") return size;
+  if(typeof L==="string"){ const m=L.match(/^per(\d+)$/i); if(m) return Math.floor(size/+m[1]); }
+  return (+L)||0; }
+function capDesc(up){ const L=up.limit;
+  if(L==="any") return "any model";
+  if(typeof L==="string"){ const m=L.match(/^per(\d+)$/i); if(m) return "1 per "+m[1]+" models"; }
+  return "max "+(+L||0); }
 // parse points modifiers from a unit's text
 function parseModel(u){
-  const out={base:u.pointsValue||0, baseCount:1, perModel:0, maxExtra:0, addons:[], lists:[]};
-  const comp=(u.composition||"").match(/^\s*(\d+)/); if(comp) out.baseCount=+comp[1];
+  const out={base:u.pointsValue||0, baseCount:1, perModel:0, maxExtra:0, addons:[], lists:[], upgrades:[]};
+  // base model count = sum of every "N <model>" line ("1 Huscarl\n9 Grey Slayers" = 10), not just the first
+  let bc=0; (u.composition||"").split(/\n/).forEach(l=>{const cm=l.match(/^\s*(\d+)\b/); if(cm) bc+=+cm[1];});
+  if(bc) out.baseCount=bc;
   (u.sizeRules||[]).forEach(line=>{
     line.split(/\n/).forEach(seg=>{
       let m=seg.match(/up to (\d+) additional.*?\+\s*(\d+)\s*points?\s*per model/i);
@@ -634,6 +651,19 @@ function parseModel(u){
         out.addons.push({name:m[1].trim(),pts:+m[2],qty:0,max:1,model:"Squad"});
     });
   });
+  // structured, hand-authored upgrades take precedence over the regex guesser below
+  if(Array.isArray(u.upgrades)&&u.upgrades.length){
+    out.upgrades=u.upgrades.map(up=>{
+      const choices=up.choices||[];
+      const single=choices.length===1 && !up.list;
+      const kind = up.list ? "list"
+        : (up.pickOne || (choices.length>1 && upLimitIsOne(up.limit))) ? "pick"
+        : "step";
+      return {model:up.model||"Squad", replaces:up.replaces||"", limit:up.limit,
+              list:up.list||"", choices, note:up.note||"", kind, single};
+    });
+    return out;
+  }
   // wargear lists referenced in options
   (u.options||[]).forEach(opt=>{
     const model=optModel(opt);
@@ -665,7 +695,66 @@ function newDetachment(tid){
 function makeEntry(id){
   const u=unitMap[id]; if(!u) return null;
   const m=parseModel(u);
-  return {id,uid:rid(),size:m.baseCount,addons:m.addons.map(_=>0),gear:[],adjust:0,tag:"",note:"",_m:m,open:true};
+  return {id,uid:rid(),size:m.baseCount,addons:m.addons.map(_=>0),
+    ups:m.upgrades.map(up=>up.kind==="list"?[]:up.kind==="pick"?[-1]:up.choices.map(_=>0)),
+    gear:[],adjust:0,tag:"",note:"",_m:m,open:true};
+}
+// remaining headroom for a step-type upgrade (multi-choice shares one pool)
+function upCapLeft(e,up,i){ const cap=upCap(up,e.size);
+  if(up.kind==="step"){ const used=(e.ups[i]||[]).reduce((a,b)=>a+(b||0),0); return cap-used; }
+  return cap; }
+// trim selections that exceed a shrunken cap (e.g. after removing models)
+function clampUps(e){ const m=e._m; if(!m||!m.upgrades) return;
+  m.upgrades.forEach((up,i)=>{ const sel=e.ups&&e.ups[i]; if(!sel) return; const cap=upCap(up,e.size);
+    if(up.kind==="list"){ if(sel.length>cap) sel.length=cap; }
+    else if(up.kind==="step"){ let used=sel.reduce((a,b)=>a+(b||0),0);
+      for(let ci=sel.length-1;ci>=0&&used>cap;ci--){ while(sel[ci]>0&&used>cap){ sel[ci]--; used--; } } }
+  });
+}
+// render the interactive controls for a unit's structured upgrades, grouped by model
+function renderUpgrades(e,m){
+  if(!m.upgrades||!m.upgrades.length) return "";
+  const groups={}, order=[];
+  m.upgrades.forEach((up,i)=>{ const md=up.model||"Squad"; if(!groups[md]){groups[md]=[];order.push(md);} groups[md].push(i); });
+  let h="";
+  order.forEach(md=>{ if(order.length>1||md!=="Squad") h+=`<div class="wgroup">${md}</div>`;
+    groups[md].forEach(i=>{ h+=upRow(e,m.upgrades[i],i); }); });
+  return h;
+}
+function upRow(e,up,i){
+  const uid=e.uid, sel=e.ups[i]||[], cap=upCap(up,e.size);
+  const lbl=md=>`<label>${md}</label>`;
+  if(up.kind==="list"){
+    const L=G.wargearLists[slug(up.list)], items=L?L.items:[];
+    if(!cap) return "";
+    let out="";
+    for(let j=0;j<cap;j++){ const cur=sel[j];
+      out+=`<div class="cfg">${lbl(j===0?up.list.replace(/ List$/,'').replace(/^Legion /,''):'')}
+        <select data-ulist="${uid}:${i}:${j}"><option value="">— add item —</option>`+
+        items.map(it=>`<option value="${it.name}|${it.points}" ${cur&&cur.name===it.name?'selected':''}>${it.name} (+${it.points})</option>`).join("")+
+        `</select>${j===0?`<span style="color:var(--dim);font-size:11px">max ${cap}</span>`:''}</div>`; }
+    return out;
+  }
+  if(up.kind==="pick"){ const idx=sel[0];
+    return `<div class="cfg">${lbl((up.replaces?up.replaces+' → ':'')||'Upgrade')}
+      <select data-upick="${uid}:${i}"><option value="-1">${up.replaces?'Keep '+up.replaces:'— none —'}</option>`+
+      up.choices.map((c,ci)=>`<option value="${ci}" ${idx===ci?'selected':''}>${c.name} (+${c.pts})</option>`).join("")+
+      `</select></div>`;
+  }
+  // step: single choice -> checkbox (cap 1) or one stepper; multi choice -> shared-pool box
+  if(up.single){ const c=up.choices[0], name=(up.replaces?up.replaces+' → ':'')+c.name;
+    if(cap<=1) return `<label class="optck"><input type="checkbox" data-uchk="${uid}:${i}" ${sel[0]?'checked':''}>
+      <span>${name}</span><span class="pts">+${c.pts}</span></label>`;
+    return `<div class="cfg">${lbl(name)}<div class="stepper">
+      <button data-udec="${uid}:${i}:0">−</button><span class="n">${sel[0]||0}</span><button data-uinc="${uid}:${i}:0">+</button></div>
+      <span style="color:var(--dim);font-size:11px">+${c.pts} ea · max ${cap}</span></div>`;
+  }
+  const used=sel.reduce((a,b)=>a+(b||0),0), left=cap-used;
+  const body=up.choices.map((c,ci)=>`<div class="uprow">
+    <div class="stepper"><button data-udec="${uid}:${i}:${ci}">−</button><span class="n">${sel[ci]||0}</span><button data-uinc="${uid}:${i}:${ci}">+</button></div>
+    <span class="upn">${c.name}</span><span class="upp">+${c.pts}</span></div>`).join("");
+  return `<div class="upbox"><div class="upcap">${up.replaces?up.replaces+' → choice':'Choice'}
+    <span style="color:var(--dim)">· ${capDesc(up)} · ${left} left</span></div>${body}</div>`;
 }
 function eachEntry(cb){R.detachments.forEach(d=>d.slots.forEach(s=>{if(s.entry)cb(s.entry,s,d);}));}
 function allEntries(){const a=[];eachEntry(e=>a.push(e));return a;}
@@ -674,6 +763,11 @@ function entryPoints(e){
   p += (e.size-m.baseCount)*m.perModel;
   (e.addons||[]).forEach((qty,i)=>{p += qty*(m.addons[i]?m.addons[i].pts:0);});
   (e.gear||[]).forEach(g=>{p += g.pts*(g.qty||1);});
+  (m.upgrades||[]).forEach((up,i)=>{ const sel=e.ups&&e.ups[i]; if(!sel) return;
+    if(up.kind==="list") sel.forEach(it=>{ if(it) p+=it.pts||0; });
+    else if(up.kind==="pick"){ const idx=sel[0]; if(idx>=0&&up.choices[idx]) p+=up.choices[idx].pts||0; }
+    else up.choices.forEach((c,ci)=>{ p+=(sel[ci]||0)*(c.pts||0); });
+  });
   p += (e.adjust||0);
   return p;
 }
@@ -853,6 +947,7 @@ function entryHTML(e,p){
       <button data-dec="${e.uid}">−</button><span class="n">${e.size}</span><button data-inc="${e.uid}">+</button></div>
       <span style="color:var(--dim);font-size:11px">${m.baseCount}–${m.baseCount+m.maxExtra} · +${m.perModel}/model</span></div>`;
   }
+  cfg+=renderUpgrades(e,m);
   // group the wargear choices under the model they belong to (Sergeant, Squad…)
   const groups={}, order=[];
   const bucket=md=>{ if(!groups[md]){groups[md]=[]; order.push(md);} return groups[md]; };
@@ -939,7 +1034,14 @@ function bindRoster(){
   root.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delUnit(b.dataset.del));
   root.querySelectorAll("[data-detail]").forEach(b=>b.onclick=()=>showDetail(b.dataset.detail));
   root.querySelectorAll("[data-inc]").forEach(b=>b.onclick=()=>{const e=find(b.dataset.inc);if(e.size<e._m.baseCount+e._m.maxExtra){e.size++;renderRoster();}});
-  root.querySelectorAll("[data-dec]").forEach(b=>b.onclick=()=>{const e=find(b.dataset.dec);if(e.size>e._m.baseCount){e.size--;renderRoster();}});
+  root.querySelectorAll("[data-dec]").forEach(b=>b.onclick=()=>{const e=find(b.dataset.dec);if(e.size>e._m.baseCount){e.size--;clampUps(e);renderRoster();}});
+  root.querySelectorAll("[data-uinc]").forEach(b=>b.onclick=()=>{const[uid,i,ci]=b.dataset.uinc.split(":");const e=find(uid);if(upCapLeft(e,e._m.upgrades[i],+i)>0){e.ups[i][ci]=(e.ups[i][ci]||0)+1;renderRoster();}});
+  root.querySelectorAll("[data-udec]").forEach(b=>b.onclick=()=>{const[uid,i,ci]=b.dataset.udec.split(":");const e=find(uid);if(e.ups[i][ci]>0){e.ups[i][ci]--;renderRoster();}});
+  root.querySelectorAll("[data-uchk]").forEach(c=>c.onchange=()=>{const[uid,i]=c.dataset.uchk.split(":");const e=find(uid);e.ups[i][0]=c.checked?1:0;renderRoster();});
+  root.querySelectorAll("[data-upick]").forEach(s=>s.onchange=()=>{const[uid,i]=s.dataset.upick.split(":");const e=find(uid);e.ups[i][0]=+s.value;renderRoster();});
+  root.querySelectorAll("[data-ulist]").forEach(s=>s.onchange=()=>{const[uid,i,j]=s.dataset.ulist.split(":");const e=find(uid);
+    if(!s.value)e.ups[i][j]=null;else{const[name,pts]=s.value.split("|");e.ups[i][j]={name,pts:+pts};}
+    e.ups[i]=e.ups[i].filter(x=>x);renderRoster();});
   root.querySelectorAll("[data-ainc]").forEach(b=>b.onclick=()=>{const[uid,i]=b.dataset.ainc.split(":");const e=find(uid);if((e.addons[i]||0)<e._m.addons[i].max){e.addons[i]=(e.addons[i]||0)+1;renderRoster();}});
   root.querySelectorAll("[data-adec]").forEach(b=>b.onclick=()=>{const[uid,i]=b.dataset.adec.split(":");const e=find(uid);if(e.addons[i]>0){e.addons[i]--;renderRoster();}});
   root.querySelectorAll("[data-atog]").forEach(c=>c.onchange=()=>{const[uid,i]=c.dataset.atog.split(":");const e=find(uid);e.addons[i]=c.checked?1:0;renderRoster();});
@@ -1206,7 +1308,7 @@ function showDetail(id){
     html+=`<div class="sec"><h3>Type</h3>`+Object.entries(u.types).map(([k,v])=>
       `<div style="font-size:12px"><span style="color:var(--muted)">${k==='_'?'':k+': '}</span>${Array.isArray(v)?v.join(', '):v}</div>`).join("")+`</div>`;
   }
-  if(u.options&&u.options.length) html+=`<div class="sec"><h3>Options</h3><ul>${u.options.map(o=>`<li>${o}</li>`).join("")}</ul></div>`;
+  if(u.options&&u.options.length&&!(u.upgrades&&u.upgrades.length)) html+=`<div class="sec"><h3>Options</h3><ul>${u.options.map(o=>`<li>${o}</li>`).join("")}</ul></div>`;
   if(u.lore&&u.lore.length) html+=`<div class="sec"><h3>Lore</h3><div class="lore">${u.lore.join("\n\n")}</div></div>`;
   document.getElementById("sheet").innerHTML=html;
   document.getElementById("modal").classList.add("show");
@@ -1224,10 +1326,11 @@ function serialize(){
   return {v:2,name:R.name,limit:R.limit,
     detachments:R.detachments.map(d=>({tid:d.tid,
       slots:d.slots.map(s=>s.entry?{id:s.entry.id,size:s.entry.size,addons:s.entry.addons,
-        gear:s.entry.gear,adjust:s.entry.adjust,tag:s.entry.tag,note:s.entry.note}:null)}))};
+        ups:s.entry.ups,gear:s.entry.gear,adjust:s.entry.adjust,tag:s.entry.tag,note:s.entry.note}:null)}))};
 }
 function applyEntry(e,sd){Object.assign(e,{size:sd.size??e.size,addons:sd.addons||e.addons,
-  gear:sd.gear||[],adjust:sd.adjust||0,tag:sd.tag||"",note:sd.note||"",open:false});}
+  ups:(sd.ups&&sd.ups.length===e.ups.length)?sd.ups:e.ups,
+  gear:sd.gear||[],adjust:sd.adjust||0,tag:sd.tag||"",note:sd.note||"",open:false});clampUps(e);}
 function hydrate(data){
   R={name:data.name||"",limit:data.limit||2000,detachments:[]};
   if(data.detachments){

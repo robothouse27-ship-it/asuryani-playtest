@@ -525,7 +525,7 @@ def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None, weap
             if sid in units: continue
             pts,comp,size=squad_economics(entry)
             if not comp: comp=composition(entry,idx)
-            wopts=[]; traits=[]; lore=[]
+            wopts=[]; traits=[]; lore=[]; upgrades=[]
             if sid in overlay_units:
                 # authoritative data hand-transcribed from the Liber Astartes datasheet
                 ov=overlay_units[sid]
@@ -534,6 +534,7 @@ def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None, weap
                 traits=ov.get("traits",[])
                 wopts=ov.get("options",[])
                 lore=ov.get("lore",[])
+                upgrades=ov.get("upgrades",[])
                 if "composition" in ov: comp=ov["composition"]
                 if "sizeRules" in ov: size=ov["sizeRules"]
             else:
@@ -549,6 +550,7 @@ def build_units(idx, army_roots, weap_ids=None, gear_ids=None, wlists=None, weap
                 "baseCost":f"{pts} points" if pts else "","pointsValue":pts,
                 "sizeRules":size,"lore":lore,"profiles":profs,
                 "wargear":wargear,"specialRules":sr,"traits":traits,"types":{},"options":wopts,
+                "upgrades":upgrades,
             }
     folded=collapse_variants(units, set(overlay_units))
     if folded: print(f"  collapsed {folded} variant units into base + options")

@@ -23,7 +23,7 @@ ov_lists = {**_common.get("wargearLists", {}), **_legion.get("wargearLists", {})
 
 # scalar/array fields copied verbatim from the overlay onto each unit
 DIRECT = ["lore", "wargear", "traits", "options", "composition", "sizeRules",
-          "baseCost", "pointsValue"]
+          "baseCost", "pointsValue", "upgrades"]
 
 def patch_unit(u):
     ov_u = ov_units[u["id"]]
