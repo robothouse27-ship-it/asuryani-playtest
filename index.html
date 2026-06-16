@@ -260,6 +260,10 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .uprow{display:flex;align-items:center;gap:10px;margin-top:6px}
 .uprow .upn{font-size:13px;flex:1}
 .uprow .upp{color:var(--dim);font-size:11px}
+.primebox{background:var(--glow);border:1px solid var(--accent-d);border-radius:var(--radius-sm);padding:9px 11px;margin:6px 0}
+.primehd{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:6px;letter-spacing:.02em}
+.primetext{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
+.slotempty.prime{border-color:var(--accent-d);color:var(--accent)}
 .optresid{margin:6px 0 2px;padding-left:10px;border-left:2px solid var(--line)}
 .optresid div{font-size:11px;color:var(--dim);margin:3px 0;line-height:1.35}
 .cfg select,.cfg input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--bone);
@@ -297,6 +301,7 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
   padding:3px 8px;border-radius:var(--radius-pill);font-weight:700}
 .dtype.aux{background:var(--blue);color:#042c53}.dtype.apex{background:#b58be0;color:#2a1646}
 .dtype.allied,.dtype.lordOfWar,.dtype.warlord{background:var(--amber);color:#412402}
+.dtype.open{background:var(--muted);color:var(--bg)}.detcard.open{border-color:var(--edge)}
 .dethead .dn{flex:1;font-size:13.5px;font-weight:600;font-family:var(--font-display);letter-spacing:.3px}
 .dethead .dn .vf{color:var(--amber);font-size:11px;cursor:help}
 .dethead .dpts{color:var(--amber);font-size:12.5px;font-weight:600;font-family:var(--font-mono)}
@@ -513,6 +518,10 @@ table.kv td:first-child{color:var(--muted)}
     </div>
     <div class="field"><span>List</span><input class="name" id="rname" placeholder="Untitled list"></div>
     <div class="field"><span>Limit</span><input class="pts" id="rlimit" type="number" value="2000" step="50"></div>
+    <div class="modeseg" id="focSeg" title="FOC = detachment force-org rules · Open = free list, no restrictions">
+      <button data-foc="matched" class="on">FOC</button>
+      <button data-foc="open">Open</button>
+    </div>
     <div class="grow"></div>
     <button class="btn more" id="moreBtn" title="Actions">⋯</button>
     <div class="actionbar" id="actionbar">
@@ -684,14 +693,31 @@ function parseModel(u){
 // ---------- roster state ----------
 let R;
 function blank(){
-  const r={name:"",limit:2000,detachments:[]};
+  const r={name:"",limit:2000,open:false,detachments:[]};
   if(DET.primary) r.detachments.push(newDetachment(DET.primary.id));
   return r;
+}
+// Open mode = one free bucket, any units, no slots/legality
+function openDetachment(){ return {did:rid(),tid:"__open__",type:"open",name:"Open List",slots:[]}; }
+function setFoc(open){
+  if(!!R.open===!!open) return;
+  const entries=allEntries();
+  if(open){
+    const od=openDetachment();
+    entries.forEach(e=>{e.prime="";e.primeAddRole="";od.slots.push({role:"Open",entry:e});});
+    R.detachments=[od]; R.open=true;
+  }else{
+    R.open=false; R.detachments=[]; if(DET.primary)R.detachments.push(newDetachment(DET.primary.id));
+    const dropped=[];
+    entries.forEach(e=>{const u=unitMap[e.id];const slot=u&&findOpenSlot(u.slot);if(slot)slot.entry=e;else dropped.push(u?u.name:e.id);});
+    if(dropped.length) flash("No slot for: "+dropped.join(", ")+" — add detachments or use Open");
+  }
+  cancelPick(); render();
 }
 function newDetachment(tid){
   const t=TEMPLATES[tid]; if(!t) return null;
   const slots=[];
-  (t.slots||[]).forEach(s=>{for(let i=0;i<(s.count||1);i++) slots.push({role:s.role,entry:null});});
+  (t.slots||[]).forEach(s=>{for(let i=0;i<(s.count||1);i++) slots.push({role:s.role,entry:null,prime:i<(s.prime||0)});});
   return {did:rid(),tid,type:t.type,name:t.name,slots};
 }
 function makeEntry(id){
@@ -699,7 +725,7 @@ function makeEntry(id){
   const m=parseModel(u);
   return {id,uid:rid(),size:m.baseCount,addons:m.addons.map(_=>0),
     ups:m.upgrades.map(up=>up.kind==="list"?[]:up.kind==="pick"?[-1]:up.choices.map(_=>0)),
-    gear:[],adjust:0,tag:"",note:"",_m:m,open:true};
+    gear:[],adjust:0,tag:"",note:"",prime:"",primeAddRole:"",_m:m,open:true};
 }
 // remaining headroom for a step-type upgrade (multi-choice shares one pool)
 function upCapLeft(e,up,i){ const cap=upCap(up,e.size);
@@ -775,14 +801,21 @@ function entryPoints(e){
   return p;
 }
 function detPoints(d){let p=0;d.slots.forEach(s=>{if(s.entry)p+=entryPoints(s.entry);});return p;}
+// a unit's Battlefield Role may fill a slot of the same role; a prime Command slot
+// also accepts a High Command unit (Special Assignment)
+function slotAccepts(s,role){
+  if(s.role===role) return true;
+  if(s.prime && s.role==="Command" && role==="High Command") return true;
+  return false;
+}
 function findOpenSlot(role){
-  for(const d of R.detachments) for(const s of d.slots) if(s.role===role && !s.entry) return s;
+  for(const d of R.detachments) for(const s of d.slots) if(slotAccepts(s,role) && !s.entry) return s;
   return null;
 }
 // ---- fun slotting: pick a unit → matching empty slots light up → tap one to place ----
 let pendingPick=null, justAddedUid=null;
 function openSlotsFor(role){
-  const out=[]; R.detachments.forEach(d=>d.slots.forEach(s=>{if(s.role===role&&!s.entry)out.push(s);}));
+  const out=[]; R.detachments.forEach(d=>d.slots.forEach(s=>{if(slotAccepts(s,role)&&!s.entry)out.push(s);}));
   return out;
 }
 const isMobile=()=>window.matchMedia("(max-width:820px)").matches;
@@ -793,6 +826,10 @@ function gotoRoster(){
 }
 function place(id,slot){
   slot.entry=makeEntry(id); justAddedUid=slot.entry.uid; pendingPick=null;
+  // a High Command unit in a prime Command slot is there via Special Assignment
+  // (unless it's a Unique model, which may only ever take Logistical Benefit)
+  if(slot.prime&&slot.role==="Command"&&unitMap[id]&&unitMap[id].slot==="High Command"&&!unitHasUnique(unitMap[id]))
+    slot.entry.prime="special-assignment";
   gotoRoster(); render();
   requestAnimationFrame(()=>{const el=document.querySelector(`.rentry[data-uid="${justAddedUid}"]`);
     if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"}); justAddedUid=null;});
@@ -800,6 +837,11 @@ function place(id,slot){
 // catalog "+" / card add → pick. One slot: place instantly. Many: highlight & let them choose.
 function addUnit(id){
   const u=unitMap[id]; if(!u) return;
+  if(R.open){ let od=R.detachments[0]; if(!od||od.type!=="open"){od=openDetachment();R.detachments=[od];}
+    od.slots.push({role:"Open",entry:makeEntry(id)}); justAddedUid=od.slots[od.slots.length-1].entry.uid;
+    gotoRoster(); render();
+    requestAnimationFrame(()=>{const el=document.querySelector(`.rentry[data-uid="${justAddedUid}"]`);if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"});justAddedUid=null;});
+    return; }
   const open=openSlotsFor(u.slot);
   if(!open.length){ cancelPick();
     flash("No open “"+u.slot+"” slot — add a detachment that has one"); return; }
@@ -809,10 +851,11 @@ function addUnit(id){
   flash("Choose a slot for "+u.name);
 }
 function cancelPick(){ if(pendingPick){pendingPick=null;renderCatalog();renderRoster();} }
-function delUnit(uid){eachEntry((e,s)=>{if(e.uid===uid)s.entry=null;});render();}
+function delUnit(uid){eachEntry((e,s)=>{if(e.uid===uid)s.entry=null;});
+  R.detachments.forEach(d=>{if(d.type==="open")d.slots=d.slots.filter(s=>s.entry);});render();}
 // detachment unlock accounting
 function unlocks(){
-  let hc=0,cmd=0; eachEntry((e,s)=>{if(s.role==="High Command")hc++;else if(s.role==="Command")cmd++;});
+  let hc=0,cmd=0; eachEntry((e,s)=>{if(s.prime&&e.prime==="special-assignment")return;if(s.role==="High Command")hc++;else if(s.role==="Command")cmd++;});
   const aux=R.detachments.filter(d=>d.type==="auxiliary").length;
   const apex=R.detachments.filter(d=>d.type==="apex").length;
   const auxFromHc=Math.max(0,aux-cmd);
@@ -845,6 +888,7 @@ function removeDetachment(did){
 function render(){
   document.getElementById("rname").value=R.name;
   document.getElementById("rlimit").value=R.limit;
+  document.querySelectorAll("#focSeg button").forEach(b=>b.classList.toggle("on",(b.dataset.foc==="open")===!!R.open));
   renderCatalog(); renderRoster();
 }
 function renderCatalog(){
@@ -873,6 +917,19 @@ function statHeaders(profiles){
 function renderRoster(){
   const root=document.getElementById("roster");
   let total=0,html="";
+  // sync prime-slot context onto filled entries so the entry card can show the picker
+  R.detachments.forEach(d=>d.slots.forEach(s=>{if(s.entry){s.entry._prime=!!s.prime;s.entry._primeRole=s.role;s.entry._det=d;}}));
+  if(R.open){
+    const od=R.detachments[0]||openDetachment();
+    od.slots.forEach(s=>{if(s.entry)total+=entryPoints(s.entry);});
+    html=`<div class="detcard open"><div class="dethead"><span class="dtype open">Open</span>
+      <span class="dn">Open List <small style="color:var(--dim)">· no detachment rules</small></span><span class="dpts">${total} pts</span></div>
+      <div class="detbody">`;
+    if(!od.slots.length) html+=`<div class="unlx">↳ add any units from the catalog — no slots, no restrictions</div>`;
+    od.slots.forEach(s=>{if(s.entry)html+=entryHTML(s.entry,entryPoints(s.entry));});
+    html+=`</div></div>`;
+    root.innerHTML=html; updateSummary(total); bindRoster(); return;
+  }
   R.detachments.forEach(d=>{
     const sub=detPoints(d); total+=sub;
     const t=TEMPLATES[d.tid]||{};
@@ -901,7 +958,7 @@ function renderRoster(){
       const hl=pend&&pend.slot===role?" hl":"";
       slots.forEach(s=>{
         if(!s.entry){const idx=d.slots.indexOf(s);
-          html+=`<span class="slotempty${hl}" data-slot="${d.did}:${idx}">＋ ${hl?'Place '+pend.name:role}</span>`;}
+          html+=`<span class="slotempty${hl}${s.prime?' prime':''}" data-slot="${d.did}:${idx}">${s.prime?'✦ ':'＋ '}${hl?'Place '+pend.name:role}${s.prime?' · Prime':''}</span>`;}
       });
     });
     html+=`</div></div>`;
@@ -931,6 +988,46 @@ function addBarHTML(){
       <button class="ab" data-addt="warlord" ${wlOK?"":"disabled"} title="${wlOK?"":"Needs a "+(RULES.warlordMinPoints||3000)+"+ pt army (max 1)"}">＋ Warlord</button>
     </div></div>`;
 }
+// ---------- Prime Advantages ----------
+function primeAdvs(){ return DET.primeAdvantages||[]; }
+function unitHasUnique(u){
+  if(!u) return false;
+  return (u.profiles||[]).some(p=>/\bUnique\b/i.test((p.stats&&p.stats.Type)||""))
+    || (u.traits||[]).some(t=>/\bUnique\b/i.test(t))
+    || /\bUnique\b/i.test(JSON.stringify(u.types||{}));
+}
+function primeUsed(det,key,exceptUid){
+  return !!det&&det.slots.some(s=>s.entry&&s.entry.uid!==exceptUid&&s.entry.prime===key);
+}
+const PRIME_ADD_ROLES=["Retinue","Elites","War-Engines","Troops","Support","Transports","Heavy Transports","Heavy Assault","Armour","Reconnaissance","Fast Attack"];
+function setPrime(e,key){
+  if(e.prime==="logistical-benefit"&&key!=="logistical-benefit") removeLogisticalSlot(e);
+  e.prime=key||""; if(key!=="logistical-benefit") e.primeAddRole="";
+}
+function removeLogisticalSlot(e){ if(e._det) e._det.slots=e._det.slots.filter(s=>s.addedBy!==e.uid); }
+function setPrimeAddRole(e,role){
+  removeLogisticalSlot(e); e.primeAddRole=role||"";
+  if(role&&e._det) e._det.slots.push({role,entry:null,prime:false,addedBy:e.uid});
+}
+function renderPrime(e){
+  if(!e._prime) return "";
+  const det=e._det, uniq=unitHasUnique(unitMap[e.id]);
+  let opts=`<option value="">— choose advantage —</option>`;
+  primeAdvs().forEach(a=>{
+    let dis=(a.commandOnly&&e._primeRole!=="Command")||(uniq&&a.key!=="logistical-benefit")
+      ||(a.oncePerDetachment&&primeUsed(det,a.key,e.uid));
+    opts+=`<option value="${a.key}" ${e.prime===a.key?"selected":""} ${dis?"disabled":""}>${a.name}${dis?" — n/a":""}</option>`;
+  });
+  const cur=primeAdvs().find(a=>a.key===e.prime);
+  let h=`<div class="primebox"><div class="primehd">✦ Prime Slot${uniq?" · Unique → Logistical Benefit only":""}</div>
+    <select data-prime="${e.uid}">${opts}</select>`;
+  if(cur) h+=`<div class="primetext">${cur.text}</div>`;
+  if(e.prime==="logistical-benefit")
+    h+=`<div class="cfg" style="margin-top:6px"><label>Added slot</label>
+      <select data-primeslot="${e.uid}"><option value="">— choose role —</option>`+
+      PRIME_ADD_ROLES.map(r=>`<option value="${r}" ${e.primeAddRole===r?"selected":""}>${r}</option>`).join("")+`</select></div>`;
+  return h+`</div>`;
+}
 function entryHTML(e,p){
   const u=unitMap[e.id],m=e._m;
   let cfg="";
@@ -945,6 +1042,7 @@ function entryHTML(e,p){
     if(traits.length) cfg+=`<div class="lref"><span class="lk">Traits</span><span>${traits.map(term).join(", ")}</span></div>`;
     cfg+=`</div>`;
   }
+  cfg+=renderPrime(e);
   if(m.perModel>0){
     cfg+=`<div class="cfg"><label>Models</label><div class="stepper">
       <button data-dec="${e.uid}">−</button><span class="n">${e.size}</span><button data-inc="${e.uid}">+</button></div>
@@ -1008,13 +1106,15 @@ function updateSummary(total){
   document.getElementById("mPts").className="v "+(total>R.limit?"over":"ok");
   document.getElementById("mUnits").textContent=allEntries().length;
   const tb=document.getElementById("tabBadge"); if(tb) tb.textContent=total?`${total} pts`:"";
-  const issues=legality(total);
   const s=document.getElementById("mStat");
+  if(R.open){s.textContent="Open";s.style.color="var(--muted)";s.title="Open list — no detachment restrictions";return;}
+  const issues=legality(total);
   if(!issues.length){s.textContent="✓ Legal";s.style.color="var(--green)";}
   else{s.textContent=issues.length+" issue"+(issues.length>1?"s":"");s.style.color="var(--red)";s.title=issues.join("\n");}
 }
 function legality(total){
   const out=[];
+  if(R.open) return out;
   if(total>R.limit) out.push(`Over points limit (${total}/${R.limit})`);
   R.detachments.forEach(d=>{
     const n=d.slots.filter(s=>s.entry).length;
@@ -1057,6 +1157,8 @@ function bindRoster(){
   root.querySelectorAll("[data-tag]").forEach(t=>t.onclick=()=>{const[uid,tag]=t.dataset.tag.split(":");const e=find(uid);e.tag=e.tag===tag?"":tag;renderRoster();});
   root.querySelectorAll("[data-note]").forEach(n=>n.onchange=()=>{find(n.dataset.note).note=n.value;});
   root.querySelectorAll("[data-detrm]").forEach(b=>b.onclick=()=>removeDetachment(b.dataset.detrm));
+  root.querySelectorAll("[data-prime]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.prime);if(e){setPrime(e,s.value);renderRoster();}});
+  root.querySelectorAll("[data-primeslot]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.primeslot);if(e){setPrimeAddRole(e,s.value);renderRoster();}});
   // click anywhere on the head (but not a button) to expand/collapse
   root.querySelectorAll(".rentry .head").forEach(h=>h.onclick=e=>{
     if(e.target.closest("button"))return;
@@ -1329,19 +1431,29 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){
 
 // ---------- persistence ----------
 function serialize(){
-  return {v:2,name:R.name,limit:R.limit,
+  return {v:2,name:R.name,limit:R.limit,open:!!R.open,
     detachments:R.detachments.map(d=>({tid:d.tid,
+      extra:d.slots.filter(s=>s.addedBy).map(s=>({role:s.role,addedBy:s.addedBy})),
       slots:d.slots.map(s=>s.entry?{id:s.entry.id,size:s.entry.size,addons:s.entry.addons,
-        ups:s.entry.ups,gear:s.entry.gear,adjust:s.entry.adjust,tag:s.entry.tag,note:s.entry.note}:null)}))};
+        ups:s.entry.ups,gear:s.entry.gear,adjust:s.entry.adjust,tag:s.entry.tag,note:s.entry.note,
+        prime:s.entry.prime||"",primeAddRole:s.entry.primeAddRole||""}:null)}))};
 }
 function applyEntry(e,sd){Object.assign(e,{size:sd.size??e.size,addons:sd.addons||e.addons,
   ups:(sd.ups&&sd.ups.length===e.ups.length)?sd.ups:e.ups,
-  gear:sd.gear||[],adjust:sd.adjust||0,tag:sd.tag||"",note:sd.note||"",open:false});clampUps(e);}
+  gear:sd.gear||[],adjust:sd.adjust||0,tag:sd.tag||"",note:sd.note||"",
+  prime:sd.prime||"",primeAddRole:sd.primeAddRole||"",open:false});clampUps(e);}
 function hydrate(data){
-  R={name:data.name||"",limit:data.limit||2000,detachments:[]};
+  R={name:data.name||"",limit:data.limit||2000,open:!!data.open,detachments:[]};
+  if(R.open){
+    const od=openDetachment();
+    ((data.detachments&&data.detachments[0]&&data.detachments[0].slots)||[]).forEach(sd=>{
+      if(!sd)return;const e=makeEntry(sd.id);if(e){applyEntry(e,sd);od.slots.push({role:"Open",entry:e});}});
+    R.detachments=[od]; render(); return;
+  }
   if(data.detachments){
     data.detachments.forEach(dd=>{
       const det=newDetachment(dd.tid); if(!det) return;
+      (dd.extra||[]).forEach(x=>det.slots.push({role:x.role,entry:null,prime:false,addedBy:x.addedBy}));
       (dd.slots||[]).forEach((sd,i)=>{if(sd&&det.slots[i]){const e=makeEntry(sd.id);if(e){applyEntry(e,sd);det.slots[i].entry=e;}}});
       R.detachments.push(det);
     });
@@ -1568,6 +1680,8 @@ function boot(){
   });
   // Build / Play mode toggle
   document.querySelectorAll("#modeSeg button").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+  // FOC / Open list toggle
+  document.querySelectorAll("#focSeg button").forEach(b=>b.onclick=()=>setFoc(b.dataset.foc==="open"));
   // overflow "⋯" actions menu (mobile)
   const moreBtn=document.getElementById("moreBtn"), actionbar=document.getElementById("actionbar");
   if(moreBtn&&actionbar){
