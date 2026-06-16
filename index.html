@@ -302,6 +302,7 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .dtype.aux{background:var(--blue);color:#042c53}.dtype.apex{background:#b58be0;color:#2a1646}
 .dtype.allied,.dtype.lordOfWar,.dtype.warlord{background:var(--amber);color:#412402}
 .dtype.open{background:var(--muted);color:var(--bg)}.detcard.open{border-color:var(--edge)}
+.detnote{font-size:11px;color:var(--amber);margin:0 0 8px;line-height:1.35}
 .dethead .dn{flex:1;font-size:13.5px;font-weight:600;font-family:var(--font-display);letter-spacing:.3px}
 .dethead .dn .vf{color:var(--amber);font-size:11px;cursor:help}
 .dethead .dpts{color:var(--amber);font-size:12.5px;font-weight:600;font-family:var(--font-mono)}
@@ -709,7 +710,7 @@ function setFoc(open){
   }else{
     R.open=false; R.detachments=[]; if(DET.primary)R.detachments.push(newDetachment(DET.primary.id));
     const dropped=[];
-    entries.forEach(e=>{const u=unitMap[e.id];const slot=u&&findOpenSlot(u.slot);if(slot)slot.entry=e;else dropped.push(u?u.name:e.id);});
+    entries.forEach(e=>{const u=unitMap[e.id];const slot=u&&findOpenSlot(u.slot,e.id);if(slot)slot.entry=e;else dropped.push(u?u.name:e.id);});
     if(dropped.length) flash("No slot for: "+dropped.join(", ")+" — add detachments or use Open");
   }
   cancelPick(); render();
@@ -717,7 +718,7 @@ function setFoc(open){
 function newDetachment(tid){
   const t=TEMPLATES[tid]; if(!t) return null;
   const slots=[];
-  (t.slots||[]).forEach(s=>{for(let i=0;i<(s.count||1);i++) slots.push({role:s.role,entry:null,prime:i<(s.prime||0)});});
+  (t.slots||[]).forEach(s=>{for(let i=0;i<(s.count||1);i++) slots.push({role:s.role,entry:null,prime:i<(s.prime||0),only:s.only||null});});
   return {did:rid(),tid,type:t.type,name:t.name,slots};
 }
 function makeEntry(id){
@@ -802,20 +803,22 @@ function entryPoints(e){
 }
 function detPoints(d){let p=0;d.slots.forEach(s=>{if(s.entry)p+=entryPoints(s.entry);});return p;}
 // a unit's Battlefield Role may fill a slot of the same role; a prime Command slot
-// also accepts a High Command unit (Special Assignment)
-function slotAccepts(s,role){
+// also accepts a High Command unit (Special Assignment); a restricted slot (`only`)
+// accepts only units whose id matches one of its keys (faction Auxiliary detachments)
+function slotAccepts(s,role,unitId){
+  if(s.only && unitId && !s.only.some(k=>unitId.includes(k))) return false;
   if(s.role===role) return true;
   if(s.prime && s.role==="Command" && role==="High Command") return true;
   return false;
 }
-function findOpenSlot(role){
-  for(const d of R.detachments) for(const s of d.slots) if(slotAccepts(s,role) && !s.entry) return s;
+function findOpenSlot(role,unitId){
+  for(const d of R.detachments) for(const s of d.slots) if(slotAccepts(s,role,unitId) && !s.entry) return s;
   return null;
 }
 // ---- fun slotting: pick a unit → matching empty slots light up → tap one to place ----
 let pendingPick=null, justAddedUid=null;
-function openSlotsFor(role){
-  const out=[]; R.detachments.forEach(d=>d.slots.forEach(s=>{if(slotAccepts(s,role)&&!s.entry)out.push(s);}));
+function openSlotsFor(role,unitId){
+  const out=[]; R.detachments.forEach(d=>d.slots.forEach(s=>{if(slotAccepts(s,role,unitId)&&!s.entry)out.push(s);}));
   return out;
 }
 const isMobile=()=>window.matchMedia("(max-width:820px)").matches;
@@ -842,7 +845,7 @@ function addUnit(id){
     gotoRoster(); render();
     requestAnimationFrame(()=>{const el=document.querySelector(`.rentry[data-uid="${justAddedUid}"]`);if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"});justAddedUid=null;});
     return; }
-  const open=openSlotsFor(u.slot);
+  const open=openSlotsFor(u.slot,id);
   if(!open.length){ cancelPick();
     flash("No open “"+u.slot+"” slot — add a detachment that has one"); return; }
   if(pendingPick===id){ cancelPick(); return; }          // tap again to cancel
@@ -872,9 +875,19 @@ function canAdd(type){
   if(type==="warlord") return R.limit>=(RULES.warlordMinPoints||3000) && !R.detachments.some(d=>d.type==="warlord");
   return false;
 }
+// a faction Auxiliary detachment that names an unlock unit needs that unit in a Command/HC slot
+function factionUnlocked(t){
+  if(!t||!t.unlockUnit) return true;
+  let ok=false; eachEntry((e,s)=>{ if((s.role==="Command"||s.role==="High Command")&&t.unlockUnit.some(k=>e.id.includes(k))) ok=true; });
+  return ok;
+}
+function unlockReason(t){
+  return "Needs "+t.unlockUnit.map(k=>k.replace(/-/g," ")).join(" or ")+" in a Command slot";
+}
 function addDetachment(tid){
   const t=TEMPLATES[tid]; if(!t) return;
   if(!canAdd(t.type)){flash("Can't add "+t.name+" yet"); return;}
+  if(t.faction&&!factionUnlocked(t)){flash(t.name+": "+unlockReason(t)); return;}
   R.detachments.push(newDetachment(tid)); render();
 }
 function removeDetachment(did){
@@ -937,7 +950,7 @@ function renderRoster(){
     const rm=d.type==="primary"?"":`<button class="detrm" data-detrm="${d.did}" title="Remove detachment">×</button>`;
     html+=`<div class="detcard ${d.type}"><div class="dethead">
       <span class="dtype ${d.type}">${({primary:"Primary",auxiliary:"Auxiliary",apex:"Apex",allied:"Allied",lordOfWar:"Lord of War",warlord:"Warlord"})[d.type]||d.type}</span>
-      <span class="dn">${d.name}${vf}</span><span class="dpts">${sub} pts</span>${rm}</div><div class="detbody">`;
+      <span class="dn">${d.name}${vf}</span><span class="dpts">${sub} pts</span>${rm}</div><div class="detbody">${t.note?`<div class="detnote">↳ ${t.note}</div>`:""}`;
     // group slots by role (template order)
     const order=[]; d.slots.forEach(s=>{if(!order.includes(s.role))order.push(s.role);});
     order.forEach(role=>{
@@ -970,8 +983,12 @@ function renderRoster(){
 }
 function addBarHTML(){
   const u=unlocks();
-  const aux=(DET.auxiliary||[]), apex=(DET.apex||[]);
+  const allAux=(DET.auxiliary||[]), aux=allAux.filter(t=>!t.faction), facAux=allAux.filter(t=>t.faction), apex=(DET.apex||[]);
   const opt=arr=>arr.map(t=>`<option value="${t.id}">${t.name}${t.verify?" ⚠":""}</option>`).join("");
+  const facOpt=facAux.map(t=>{const ok=factionUnlocked(t);return `<option value="${t.id}" ${ok?"":"disabled"}>${t.name}${ok?"":" — "+unlockReason(t)}</option>`;}).join("");
+  const facRow=facAux.length?`<div class="addrow"><label>Legion Auxiliary <span class="why">${u.auxFree>0?"uses an Auxiliary slot · some need a trigger unit":"unlock an Auxiliary first"}</span></label>
+      <select id="selFac">${facOpt}</select>
+      <button class="ab" id="addFac" ${u.auxFree>0?"":"disabled"}>Add</button></div>`:"";
   const lowOK=canAdd("lordOfWar"), wlOK=canAdd("warlord");
   const auxWhy=u.auxFree>0?`<span class="ok">${u.auxFree} available</span>`:`<span class="why">fill a Command or High Command slot to unlock</span>`;
   const apexWhy=u.apexFree>0?`<span class="ok">${u.apexFree} available</span>`:`<span class="why">fill a High Command slot to unlock</span>`;
@@ -979,6 +996,7 @@ function addBarHTML(){
     <div class="addrow"><label>Auxiliary ${auxWhy}</label>
       <select id="selAux">${opt(aux)}</select>
       <button class="ab" id="addAux" ${u.auxFree>0?"":"disabled"}>Add</button></div>
+    ${facRow}
     <div class="addrow"><label>Apex ${apexWhy}</label>
       <select id="selApex">${opt(apex)}</select>
       <button class="ab" id="addApex" ${u.apexFree>0?"":"disabled"}>Add</button></div>
@@ -1176,6 +1194,8 @@ function bindRoster(){
   const aAux=root.querySelector("#addAux"), aApex=root.querySelector("#addApex");
   if(aAux)aAux.onclick=()=>{const v=root.querySelector("#selAux").value;if(v)addDetachment(v);};
   if(aApex)aApex.onclick=()=>{const v=root.querySelector("#selApex").value;if(v)addDetachment(v);};
+  const aFac=root.querySelector("#addFac");
+  if(aFac)aFac.onclick=()=>{const v=root.querySelector("#selFac").value;if(v)addDetachment(v);};
 }
 function find(uid){let r=null;eachEntry(e=>{if(e.uid===uid)r=e;});return r;}
 
@@ -1460,7 +1480,7 @@ function hydrate(data){
     if(!R.detachments.length && DET.primary) R.detachments.push(newDetachment(DET.primary.id));
   } else if(data.units){ // legacy v1 flat roster
     if(DET.primary) R.detachments.push(newDetachment(DET.primary.id));
-    data.units.forEach(d=>{const u=unitMap[d.id];if(!u)return;const slot=findOpenSlot(u.slot);
+    data.units.forEach(d=>{const u=unitMap[d.id];if(!u)return;const slot=findOpenSlot(u.slot,d.id);
       const e=makeEntry(d.id);if(e){applyEntry(e,d);if(slot)slot.entry=e;}});
   } else if(DET.primary){R.detachments.push(newDetachment(DET.primary.id));}
   render();
