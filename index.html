@@ -246,6 +246,7 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .wgroup{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);
   margin:13px 0 2px;padding-bottom:3px;border-bottom:1px solid var(--line);font-weight:600}
 .wgroup:first-child{margin-top:4px}
+.wline{font-size:12.5px;line-height:1.7;margin-top:3px;color:var(--bone)}
 .optck{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--bone);
   margin:5px 14px 5px 0;cursor:pointer}
 .optck input{accent-color:var(--accent);width:15px;height:15px}
@@ -1167,8 +1168,23 @@ function showDetail(id){
     });
     return s+"</div>";
   };
-  html+=blk("Wargear",u.wargear,gearTerm);
-  html+=blk("Special Rules",u.specialRules,term);
+  // Wargear — collapse models that share an identical loadout, render inline
+  const wg=u.wargear||{}, wkeys=Object.keys(wg).filter(k=>wg[k]&&wg[k].length);
+  if(wkeys.length){
+    html+=`<div class="sec"><h3>Wargear</h3>`;
+    const groups={};
+    wkeys.forEach(k=>{const sig=JSON.stringify(wg[k]);(groups[sig]=groups[sig]||{models:[],items:wg[k]}).models.push(k);});
+    const lone=Object.keys(groups).length===1;
+    Object.values(groups).forEach(g=>{
+      const noLabel=g.models[0]==="_"||(lone&&g.models.length===1);
+      const lbl=noLabel?"":`<span style="color:var(--teal)">${g.models.map(esc).join(", ")}:</span> `;
+      html+=`<div class="wline">${lbl}${g.items.map(gearTerm).join(", ")}</div>`;
+    });
+    html+=`</div>`;
+  }
+  // Special Rules — inline clickable list (compact, scannable)
+  const srl=Object.values(u.specialRules||{}).flat().filter(x=>x&&x!=="None");
+  if(srl.length) html+=`<div class="sec"><h3>Special Rules</h3><div class="wline">${srl.map(term).join(", ")}</div></div>`;
   // resolved weapon stats
   const wnames=new Set();
   Object.values(u.wargear||{}).flat().forEach(w=>wnames.add(w));
