@@ -25,6 +25,9 @@ APP_LINKS.md
 rosters/
 playtests/
 
+# Unused reference scrap (not loaded by the app; per-legion crests live in app/crests/)
+Legion Banners.jpg
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

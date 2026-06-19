@@ -47,6 +47,18 @@ Reload the app (and re-enter the passphrase). `extract.py`/`bundle.py` are pure-
 - `build/bundle.py` — packs `data/` into the single plaintext `app/data.js`.
 - `build/encrypt.js` — AES-256-GCM encrypts the bundle into `app/data.enc.js` (the only data file published).
 
+### Health check
+
+Before committing a data or app change, run:
+
+```bash
+bash build/check.sh
+```
+
+It validates every JSON file under `data/`/`data_*/` parses, runs the points engine
+(`build/test_engine.js`) over the bundle and asserts 0 parse errors, and flags any
+stray `console.log`/`debugger` left in `index.html`. Exits non-zero on any failure.
+
 You can also hand-edit anything under `data/` directly (e.g. tweak a points cost), then re-run
 `bundle.py` + `encrypt.js` — handy for "what if this cost 5 less" experiments.
 
