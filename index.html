@@ -346,11 +346,24 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .addrow label .ok{color:var(--green);font-size:10.5px;margin-left:5px}
 .addrow label .why{color:var(--dim);font-size:10.5px;margin-left:5px;font-style:italic}
 .slotempty{display:inline-flex;align-items:center;gap:6px;border:1px dashed var(--line);border-radius:9px;
-  padding:7px 12px;font-size:12px;color:var(--dim);margin:0 6px 6px 0;background:#00000026;transition:.15s var(--ease)}
+  padding:7px 12px;font-size:12px;color:var(--dim);margin:0 6px 6px 0;background:#00000026;cursor:pointer;transition:.15s var(--ease)}
+.slotempty:not(.hl):hover{border-color:var(--accent);color:var(--accent);background:var(--glow)}
 .slotempty.hl{border-color:var(--accent);color:var(--accent);cursor:pointer;background:var(--glow);
   box-shadow:0 0 0 3px var(--glow);animation:pulseslot 1.4s ease-in-out infinite}
 .slotempty.hl:hover{background:var(--accent);color:#04211a;transform:translateY(-1px)}
 @keyframes pulseslot{0%,100%{box-shadow:0 0 0 2px var(--glow)}50%{box-shadow:0 0 0 5px var(--glow)}}
+/* slot unit-picker (tap an empty slot → choose a unit) */
+.picksearch{width:100%;box-sizing:border-box;background:#0006;border:1px solid var(--line);border-radius:9px;
+  color:var(--bone);padding:10px 12px;font-size:13px;margin:0 0 12px}
+.picksearch:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+.picklist{display:flex;flex-direction:column;gap:5px;max-height:54vh;overflow-y:auto}
+.pickrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--panel2);
+  border:1px solid var(--line);border-radius:9px;color:var(--bone);padding:11px 13px;cursor:pointer;transition:.12s var(--ease)}
+.pickrow:hover{border-color:var(--accent);background:var(--glow)}
+.pickrow .pn{flex:1;font-size:13.5px}
+.pickrow .pp{color:var(--amber);font-family:var(--font-mono);font-size:12px;white-space:nowrap}
+.pickrow .pinfo{color:var(--dim);font-size:14px;padding:0 2px}
+.pickrow .pinfo:hover{color:var(--accent)}
 .addbar{border:1px dashed var(--line);border-radius:var(--radius);padding:12px 13px;margin-top:6px;background:#00000026}
 .addbar .ttl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);margin-bottom:9px;
   display:flex;align-items:center;gap:8px;font-family:var(--font-display)}
@@ -889,6 +902,44 @@ function place(id,slot){
   requestAnimationFrame(()=>{const el=document.querySelector(`.rentry[data-uid="${justAddedUid}"]`);
     if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"}); justAddedUid=null;});
 }
+// every catalog unit that may legally go into this slot (respects role + prime + `only` rules)
+function unitsForSlot(slot){
+  return G.units.filter(u=>slotAccepts(slot,u.slot,u.id)).sort((a,b)=>a.name.localeCompare(b.name));
+}
+// tap an empty slot → searchable popup of valid units → tap one to place it
+function showSlotPicker(did,idx){
+  const d=R.detachments.find(x=>x.did===did); if(!d) return;
+  const slot=d.slots[+idx]; if(!slot||slot.entry) return;
+  const list=unitsForSlot(slot);
+  const label=slot.prime?`${slot.role} · Prime`:slot.role;
+  const draw=q=>{
+    const ql=(q||"").toLowerCase();
+    const rows=list.filter(u=>u.name.toLowerCase().includes(ql));
+    const body=rows.length?rows.map(u=>
+      `<button class="pickrow" data-pickid="${u.id}"><span class="pn">${esc(u.name)}</span>`+
+      `<span class="pp">${u.pointsValue?u.pointsValue+" pts":""}</span>`+
+      `<span class="pinfo" data-pickinfo="${u.id}" title="View datasheet">ⓘ</span></button>`).join("")
+      :`<div class="empty">No units available for this slot.</div>`;
+    document.getElementById("sheet").innerHTML=
+      `<button class="x" id="mx">×</button><h2>Add unit</h2>`+
+      `<div class="slot">${esc(label)} slot · ${esc(d.name)}</div>`+
+      `<input class="picksearch" id="pickSearch" placeholder="Search ${list.length} units…" value="${esc(q||"")}">`+
+      `<div class="picklist">${body}</div>`;
+    document.getElementById("mx").onclick=closeModal;
+    const sb=document.getElementById("pickSearch");
+    sb.oninput=()=>draw(sb.value);
+    sb.focus(); const v=sb.value; sb.value=""; sb.value=v;   // keep caret at end across redraws
+    document.querySelectorAll("#sheet .pickrow").forEach(b=>b.onclick=ev=>{
+      if(ev.target.closest("[data-pickinfo]")) return;       // info icon handled below
+      closeModal(); place(b.dataset.pickid,slot);
+    });
+    document.querySelectorAll("#sheet [data-pickinfo]").forEach(i=>i.onclick=ev=>{
+      ev.stopPropagation(); showDetail(i.dataset.pickinfo); // opens the full datasheet in this modal
+    });
+  };
+  draw("");
+  document.getElementById("modal").classList.add("show");
+}
 // catalog "+" / card add → pick. One slot: place instantly. Many: highlight & let them choose.
 function addUnit(id){
   const u=unitMap[id]; if(!u) return;
@@ -1235,10 +1286,13 @@ function bindRoster(){
     const ent=find(h.closest(".rentry").dataset.uid); if(ent){ent.open=!ent.open;renderRoster();}});
   // tap a lit empty slot to drop the pending unit into it
   root.querySelectorAll("[data-slot]").forEach(s=>s.onclick=()=>{
-    if(!pendingPick)return;
     const[did,idx]=s.dataset.slot.split(":");
     const d=R.detachments.find(x=>x.did===did); const slot=d&&d.slots[+idx];
-    if(slot&&!slot.entry)place(pendingPick,slot);});
+    if(!slot||slot.entry)return;
+    // a unit picked from the catalog that fits → drop it straight in (original flow)
+    if(pendingPick&&unitMap[pendingPick]&&slotAccepts(slot,unitMap[pendingPick].slot,pendingPick)){place(pendingPick,slot);return;}
+    // otherwise open the slot's unit picker
+    showSlotPicker(did,idx);});
   root.querySelectorAll("[data-addt]").forEach(b=>b.onclick=()=>{
     const k=b.dataset.addt, t=DET.additional&&DET.additional[k];
     if(t)addDetachment(t.id);
