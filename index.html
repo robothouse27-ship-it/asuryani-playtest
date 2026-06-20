@@ -1201,6 +1201,23 @@ function setPrimeAddRole(e,role){
   removeLogisticalSlot(e); e.primeAddRole=role||"";
   if(role&&e._det) e._det.slots.push({role,entry:null,prime:false,addedBy:e.uid});
 }
+// Special Assignment lets a prime Command slot be filled by a High Command unit.
+// Picking the advantage now offers the controller's High Command units to swap in
+// (Unique models are excluded — in a prime slot they may only take Logistical Benefit).
+function highCommandUnits(){
+  return G.units.filter(u=>u.slot==="High Command"&&!isSubVariant(u)&&!unitHasUnique(u))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+}
+function swapSpecialAssignment(uid,newId){
+  if(!unitMap[newId]) return;
+  eachEntry((e,s)=>{
+    if(e.uid!==uid) return;
+    const ne=makeEntry(newId); if(!ne) return;
+    ne.prime="special-assignment"; ne.tag=e.tag; ne.note=e.note; ne.open=true;
+    s.entry=ne;
+  });
+  render();
+}
 function renderPrime(e){
   if(!e._prime) return "";
   const det=e._det, uniq=unitHasUnique(unitMap[e.id]);
@@ -1218,6 +1235,13 @@ function renderPrime(e){
     h+=`<div class="cfg" style="margin-top:6px"><label>Added slot</label>
       <select data-primeslot="${e.uid}"><option value="">— choose role —</option>`+
       PRIME_ADD_ROLES.map(r=>`<option value="${r}" ${e.primeAddRole===r?"selected":""}>${r}</option>`).join("")+`</select></div>`;
+  if(e.prime==="special-assignment"){
+    const cur=unitMap[e.id]&&unitMap[e.id].slot==="High Command"?e.id:"";
+    h+=`<div class="cfg" style="margin-top:6px"><label>High Command unit</label>
+      <select data-primesa="${e.uid}"><option value="">— choose unit —</option>`+
+      highCommandUnits().map(u=>`<option value="${u.id}" ${cur===u.id?"selected":""}>${esc(u.name)}${u.pointsValue?" · "+u.pointsValue+" pts":""}</option>`).join("")+
+      `</select></div>`;
+  }
   return h+`</div>`;
 }
 function entryHTML(e,p){
@@ -1360,6 +1384,7 @@ function bindRoster(){
   root.querySelectorAll("[data-variant]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.variant);if(e)swapVariant(e.uid,s.value);});
   root.querySelectorAll("[data-prime]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.prime);if(e){setPrime(e,s.value);renderRoster();}});
   root.querySelectorAll("[data-primeslot]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.primeslot);if(e){setPrimeAddRole(e,s.value);renderRoster();}});
+  root.querySelectorAll("[data-primesa]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.primesa);if(e&&s.value)swapSpecialAssignment(e.uid,s.value);});
   // click anywhere on the head (but not a button) to expand/collapse
   root.querySelectorAll(".rentry .head").forEach(h=>h.onclick=e=>{
     if(e.target.closest("button"))return;
