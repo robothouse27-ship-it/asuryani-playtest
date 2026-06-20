@@ -904,7 +904,7 @@ function place(id,slot){
 }
 // every catalog unit that may legally go into this slot (respects role + prime + `only` rules)
 function unitsForSlot(slot){
-  return G.units.filter(u=>slotAccepts(slot,u.slot,u.id)).sort((a,b)=>a.name.localeCompare(b.name));
+  return G.units.filter(u=>slotAccepts(slot,u.slot,u.id)&&!isSubVariant(u)).sort((a,b)=>a.name.localeCompare(b.name));
 }
 // tap an empty slot → searchable popup of valid units → tap one to place it
 function showSlotPicker(did,idx){
@@ -959,6 +959,27 @@ function addUnit(id){
 function cancelPick(){ if(pendingPick){pendingPick=null;renderCatalog();renderRoster();} }
 function delUnit(uid){eachEntry((e,s)=>{if(e.uid===uid)s.entry=null;});
   R.detachments.forEach(d=>{if(d.type==="open")d.slots=d.slots.filter(s=>s.entry);});render();}
+// armour/configuration variants: units sharing a variantGroup are the same datasheet in
+// different plate (Power / Terminator / Saturnine …). Picking one swaps the whole unit.
+function variantsOf(u){
+  if(!u||!u.variantGroup) return [];
+  return G.units.filter(x=>x.variantGroup===u.variantGroup)
+    .sort((a,b)=>(a.variantOrder||0)-(b.variantOrder||0));
+}
+// non-primary variants are hidden from the catalog/slot-picker — reached via the entry selector
+const isSubVariant=u=>!!(u.variantGroup&&!u.variantPrimary);
+function swapVariant(uid,newId){
+  if(!unitMap[newId]) return;
+  let done=false;
+  eachEntry((e,s)=>{
+    if(done||e.uid!==uid) return;
+    const ne=makeEntry(newId); if(!ne) return;
+    // keep the unit in its slot; carry per-entry annotations, drop loadout (different datasheet)
+    ne.prime=e.prime==="logistical-benefit"?"":e.prime; ne.tag=e.tag; ne.note=e.note; ne.open=true;
+    s.entry=ne; done=true;
+  });
+  if(done) render();
+}
 // detachment unlock accounting
 function unlocks(){
   let hc=0,cmd=0; eachEntry((e,s)=>{if(s.prime&&e.prime==="special-assignment")return;if(s.role==="High Command")hc++;else if(s.role==="Command")cmd++;});
@@ -1009,7 +1030,7 @@ function render(){
 }
 function renderCatalog(){
   const q=(document.getElementById("search").value||"").toLowerCase();
-  const bySlot={}; G.units.forEach(u=>{(bySlot[u.slot]=bySlot[u.slot]||[]).push(u);});
+  const bySlot={}; G.units.forEach(u=>{if(isSubVariant(u))return;(bySlot[u.slot]=bySlot[u.slot]||[]).push(u);});
   let html="";
   SLOT_ORDER.forEach(slot=>{
     let list=(bySlot[slot]||[]).filter(u=>u.name.toLowerCase().includes(q));
@@ -1164,6 +1185,14 @@ function entryHTML(e,p){
     cfg+=`</div>`;
   }
   cfg+=renderPrime(e);
+  // armour / configuration selector — swaps the whole datasheet (stats, wargear, points)
+  const variants=variantsOf(u);
+  if(variants.length>1){
+    cfg+=`<div class="cfg"><label>Armour</label>
+      <select data-variant="${e.uid}">`+
+      variants.map(v=>`<option value="${v.id}" ${v.id===e.id?"selected":""}>${v.variantLabel||v.name}${v.pointsValue?" · "+v.pointsValue+" pts":""}</option>`).join("")+
+      `</select></div>`;
+  }
   if(m.perModel>0){
     cfg+=`<div class="cfg"><label>Models</label><div class="stepper">
       <button data-dec="${e.uid}">−</button><span class="n">${e.size}</span><button data-inc="${e.uid}">+</button></div>
@@ -1278,6 +1307,7 @@ function bindRoster(){
   root.querySelectorAll("[data-tag]").forEach(t=>t.onclick=()=>{const[uid,tag]=t.dataset.tag.split(":");const e=find(uid);if(!e)return;e.tag=e.tag===tag?"":tag;renderRoster();});
   root.querySelectorAll("[data-note]").forEach(n=>n.onchange=()=>{const e=find(n.dataset.note);if(e)e.note=n.value;});
   root.querySelectorAll("[data-detrm]").forEach(b=>b.onclick=()=>removeDetachment(b.dataset.detrm));
+  root.querySelectorAll("[data-variant]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.variant);if(e)swapVariant(e.uid,s.value);});
   root.querySelectorAll("[data-prime]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.prime);if(e){setPrime(e,s.value);renderRoster();}});
   root.querySelectorAll("[data-primeslot]").forEach(s=>s.onchange=()=>{const e=find(s.dataset.primeslot);if(e){setPrimeAddRole(e,s.value);renderRoster();}});
   // click anywhere on the head (but not a button) to expand/collapse
