@@ -72,30 +72,51 @@ input,select,textarea{font-family:inherit}
 ::-webkit-scrollbar-thumb:hover{background:var(--edge)}
 ::-webkit-scrollbar-track{background:transparent}
 
-/* ---- gate ---- */
-#gate{position:fixed;inset:0;z-index:100;
-  background:radial-gradient(ellipse 90% 60% at 50% 0%, var(--bg-glow), transparent 60%), var(--bg);
-  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:22px}
-#gate .box{position:relative;background:linear-gradient(165deg,var(--panel2),var(--panel));
-  border:1px solid var(--edge);border-radius:18px;
+/* ---- gate (black / green glitch) ---- */
+#gate{position:fixed;inset:0;z-index:100;background:#000;
+  display:flex;align-items:center;justify-content:center;flex-direction:column;gap:22px;
+  font-family:var(--font-mono,monospace);overflow:hidden}
+/* drifting scanlines + green vignette over the whole gate */
+#gate::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,20,6,.5) 3px,rgba(0,0,0,0) 4px);
+  animation:scan 7s linear infinite;opacity:.55}
+#gate::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 60% at 50% 50%,rgba(0,255,90,.10),transparent 70%)}
+@keyframes scan{0%{background-position:0 0}100%{background-position:0 100px}}
+#gate .box{position:relative;z-index:3;background:linear-gradient(165deg,#06140c,#010402);
+  border:1px solid #0a4023;border-radius:14px;
   padding:40px 40px 34px;width:min(370px,90vw);text-align:center;
-  box-shadow:0 30px 80px #000a, 0 0 0 1px #ffffff06 inset, 0 0 60px var(--glow)}
-#gate .box::before{content:"";position:absolute;inset:0;border-radius:18px;pointer-events:none;
-  background:linear-gradient(120deg,transparent 40%,var(--glow) 120%);opacity:.5}
-#gate h1{font-size:23px;letter-spacing:1.5px;text-transform:uppercase}
-#gate .sub{color:var(--muted);font-size:12px;letter-spacing:.6px;margin:8px 0 26px}
-#gate input{width:100%;padding:13px;background:#0009;border:1px solid var(--line);
-  border-radius:10px;color:var(--bone);font-size:15px;text-align:center;letter-spacing:3px}
-#gate input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
-#gate button{margin-top:16px;width:100%;padding:12px;background:var(--accent-d);color:var(--bone);
-  border:1px solid var(--accent);border-radius:10px;font-size:13px;font-weight:600;letter-spacing:1px;
+  box-shadow:0 30px 80px #000c, 0 0 0 1px #00ff5a14 inset, 0 0 70px rgba(0,255,90,.14)}
+#gate h1{font-size:30px;letter-spacing:3px;text-transform:uppercase;color:#3bff8f}
+#gate .sub{color:#2f8f59;font-size:11px;letter-spacing:1px;margin:10px 0 26px}
+#gate input,#gate select{width:100%;padding:13px;background:#00120899;border:1px solid #0d5e33;
+  border-radius:8px;color:#7dffb4;font-size:15px;text-align:center;letter-spacing:3px}
+#gate select{letter-spacing:1px;text-align:left}
+#gate input:focus,#gate select:focus{outline:none;border-color:#3bff8f;box-shadow:0 0 0 3px rgba(0,255,90,.18)}
+#gate button{margin-top:16px;width:100%;padding:12px;background:#0a3d22;color:#bfffd9;
+  border:1px solid #18b35f;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:1px;
   text-transform:uppercase;transition:.18s var(--ease)}
-#gate button:hover{background:var(--accent);color:#04211a;box-shadow:0 6px 22px var(--glow-strong)}
-#gate .err{color:var(--red);font-size:12px;min-height:16px;margin-top:12px}
-.rune{font-size:36px;color:var(--accent);filter:drop-shadow(0 0 16px var(--glow-strong));
-  animation:runefloat 5s var(--ease) infinite;margin-bottom:18px}
-.rune img{height:74px;width:auto;display:block;filter:drop-shadow(0 0 18px var(--glow-strong))}
-@keyframes runefloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+#gate button:hover{background:#18b35f;color:#021b0e;box-shadow:0 6px 22px rgba(0,255,90,.35)}
+#gate .err{color:#ff5a5a;font-size:12px;min-height:16px;margin-top:12px}
+#gate .armhint{color:#2f8f59;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+#gate .gatefoot{position:relative;z-index:3;color:#1f6b40;font-size:11px;letter-spacing:.5px}
+/* glitch title — RGB split via clipped pseudo-elements */
+.glitch{position:relative;display:inline-block;text-shadow:0 0 10px rgba(0,255,90,.5)}
+.glitch::before,.glitch::after{content:attr(data-text);position:absolute;left:0;top:0;width:100%;
+  overflow:hidden;clip-path:inset(0 0 0 0)}
+.glitch::before{color:#00e0ff;transform:translate(-2px,0);animation:glitchA 2.6s infinite steps(1)}
+.glitch::after{color:#ff2bd0;transform:translate(2px,0);animation:glitchB 3.1s infinite steps(1)}
+@keyframes glitchA{
+  0%,100%{clip-path:inset(0 0 85% 0);transform:translate(-2px,0)}
+  20%{clip-path:inset(40% 0 40% 0);transform:translate(-4px,1px)}
+  40%{clip-path:inset(70% 0 5% 0);transform:translate(2px,-1px)}
+  60%{clip-path:inset(10% 0 60% 0);transform:translate(-3px,0)}
+  80%{clip-path:inset(50% 0 20% 0);transform:translate(3px,1px)}}
+@keyframes glitchB{
+  0%,100%{clip-path:inset(80% 0 5% 0);transform:translate(2px,0)}
+  25%{clip-path:inset(15% 0 55% 0);transform:translate(4px,-1px)}
+  50%{clip-path:inset(55% 0 25% 0);transform:translate(-2px,1px)}
+  75%{clip-path:inset(30% 0 50% 0);transform:translate(3px,0)}}
 
 /* ---- app ---- */
 #app{display:none;flex-direction:column;height:100vh;overflow:hidden}
@@ -294,9 +315,10 @@ main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(360px,1.25fr);o
 .slotempty.prime{border-color:var(--accent-d);color:var(--accent)}
 .optresid{margin:6px 0 2px;padding-left:10px;border-left:2px solid var(--line)}
 .optresid div{font-size:11px;color:var(--dim);margin:3px 0;line-height:1.35}
-.cfg select,.cfg input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--bone);
+.cfg select,.cfg input[type=number],.primebox select{background:var(--panel2);border:1px solid var(--line);color:var(--bone);
   border-radius:8px;padding:7px 9px;font-size:12.5px;transition:.15s}
-.cfg select:focus,.cfg input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+.primebox select{width:100%}
+.cfg select:focus,.cfg input:focus,.primebox select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
 .cfg .opt{font-size:12px;color:var(--bone);display:flex;align-items:center;gap:6px}
 .cfg input.adj{width:70px;text-align:right;font-family:var(--font-mono)}
 .tagrow{display:flex;gap:6px;margin-top:6px}
@@ -554,15 +576,21 @@ table.kv td:first-child{color:var(--muted)}
 <body>
 
 <div id="gate">
-  <div class="rune"><img src="Eldar_Rune.webp" alt="Asuryani rune"></div>
   <div class="box">
-    <h1>Heresy 3.0 Army Builder</h1>
+    <h1 class="glitch" data-text="HERESY 3.0">HERESY 3.0</h1>
     <div class="sub">Horus Heresy 3.0 · private list builder</div>
-    <input id="pw" type="password" placeholder="passphrase" autocomplete="off" autofocus>
-    <button id="pwgo">Enter</button>
-    <div class="err" id="pwerr"></div>
+    <div id="gatePw">
+      <input id="pw" type="password" placeholder="passphrase" autocomplete="off" autofocus>
+      <button id="pwgo">Enter</button>
+      <div class="err" id="pwerr"></div>
+    </div>
+    <div id="gateArmy" hidden>
+      <div class="armhint">Choose your army</div>
+      <select id="armyPick" class="armysel"></select>
+      <button id="armygo">Begin</button>
+    </div>
   </div>
-  <div style="color:var(--dim);font-size:11px">For the craftworlds.</div>
+  <div class="gatefoot">// access granted to authorised commanders only</div>
 </div>
 
 <div id="app">
@@ -659,12 +687,34 @@ async function tryUnlock(){
     const data=await decryptBundle(v);
     sessionStorage.setItem("data",JSON.stringify(data));
     try{sessionStorage.setItem("pw",v);}catch(e){}   // reused to decrypt other armies' bundles
-    startApp(data);
+    showArmyPicker();                                  // passphrase ok → pick an army before booting
   }catch(e){ err.textContent="Wrong passphrase."; btn.disabled=false; }
 }
 function startApp(data){ window.GAME_DATA=data; initEngine(); boot(); }
+// Reveal the "choose army" step inside the gate, grouped like the in-app skin menu.
+function showArmyPicker(){
+  const sel=document.getElementById("armyPick");
+  sel.innerHTML=GROUP_ORDER.map(gk=>{
+    const rows=ARMIES.filter(a=>a.g===gk);
+    if(!rows.length) return "";
+    return `<optgroup label="${GROUPS[gk].label}">`+
+      rows.map(a=>`<option value="${a.id}">${a.name}</option>`).join("")+`</optgroup>`;
+  }).join("");
+  document.getElementById("gatePw").hidden=true;
+  document.getElementById("gateArmy").hidden=false;
+  sel.focus();
+}
+// Boot the app into the chosen army (initSkinPicker reads SKIN_KEY and loads its data).
+function beginWithArmy(){
+  const id=document.getElementById("armyPick").value||"asuryani";
+  try{localStorage.setItem(SKIN_KEY,id);}catch(e){}
+  const data=JSON.parse(sessionStorage.getItem("data")||"null");
+  if(data) startApp(data);
+}
 document.getElementById("pwgo").onclick=tryUnlock;
 document.getElementById("pw").addEventListener("keydown",e=>{if(e.key==="Enter")tryUnlock();});
+document.getElementById("armygo").onclick=beginWithArmy;
+document.getElementById("armyPick").addEventListener("keydown",e=>{if(e.key==="Enter")beginWithArmy();});
 // (auto-restore of a cached session runs at the very end, after all declarations)
 
 // ---------- engine ----------
@@ -1702,7 +1752,6 @@ const A=(g,id,name,c,cd,sub,extra)=>({g,id,name,c:[c,cd],sub,...(extra||{})});
 const ARMIES=[
   A("aeldari","asuryani","Asuryani","#62d7b2","#0e6f58","Wraithbone & spirit-stone",{img:"Eldar_Rune.webp",bg:"#070b0e",bgGlow:"#0f2a2a"}),
   // Loyalist Astartes (Liber Astartes)
-  A("loyalist","loyalist","Loyalist Astartes","#d8b35a","#6e5418","Imperial gold & midnight"),
   A("loyalist","dark-angels","Dark Angels","#2f9e63","#12502f","The First, Caliban green",{data:"app/data.dark-angels.enc.js",crestImg:"app/crests/dark-angels.png"}),
   A("loyalist","white-scars","White Scars","#d4554a","#6e211a","Chogorian lightning",{data:"app/data.white-scars.enc.js",crestImg:"app/crests/white-scars.png"}),
   A("loyalist","space-wolves","Space Wolves","#84b6d6","#2d5a78","Fenrisian storm-grey",{data:"app/data.space-wolves.enc.js",crestImg:"app/crests/space-wolves.png"}),
@@ -1713,7 +1762,6 @@ const ARMIES=[
   A("loyalist","salamanders","Salamanders","#2aa85c","#114e2a","Nocturne green & flame",{data:"app/data.salamanders.enc.js",crestImg:"app/crests/salamanders.png"}),
   A("loyalist","raven-guard","Raven Guard","#c3c9d4","#3c434f","Deliverance shadow",{data:"app/data.raven-guard.enc.js",crestImg:"app/crests/raven-guard.png"}),
   // Traitor Astartes (Liber Hereticus)
-  A("traitor","traitor","Traitor Astartes","#c0392b","#5e1810","Crimson, black & brass"),
   A("traitor","sons-of-horus","Sons of Horus","#4aa389","#155848","Cthonian sea-green",{data:"app/data.sons-of-horus.enc.js",crestImg:"app/crests/sons-of-horus.png"}),
   A("traitor","death-guard","Death Guard","#b3bd72","#565c2f","Barbaran rot & rust",{data:"app/data.death-guard.enc.js",crestImg:"app/crests/death-guard.png"}),
   A("traitor","emperors-children","Emperor's Children","#b06fd6","#57298a","Chemos purple & gold",{data:"app/data.emperors-children.enc.js",crestImg:"app/crests/emperors-children.png"}),
