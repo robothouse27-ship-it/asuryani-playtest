@@ -35,7 +35,7 @@ the three-step build, **then commit and push the encrypted bundle**:
 python3 build/extract.py            # unit docx/xlsx        -> data/*.json
 python3 build/glossary.py           # rules/wargear/traits  -> data/glossary.json
 python3 build/bundle.py             # data/*.json           -> app/data.js  (plaintext, git-ignored)
-PW='Spaceelfs' node build/encrypt.js  # app/data.js         -> app/data.enc.js  (encrypted, committed)
+PW='Erebus' node build/encrypt.js  # app/data.js         -> app/data.enc.js  (encrypted, committed)
 git add app/data.enc.js && git commit -m "rules update" && git push
 ```
 

@@ -5,13 +5,13 @@
    Layout of the blob (base64): salt(16) | iv(12) | ciphertext | authTag(16).
 
    Usage:  PW='YourPassphrase' node build/encrypt.js
-           (defaults to 'Spaceelfs' if PW is not set) */
+           (defaults to 'Erebus' if PW is not set) */
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.dirname(__dirname);
-const PW = process.env.PW || "Spaceelfs";
+const PW = process.env.PW || "Erebus";
 const ITER = 200000;
 
 global.window = {};
@@ -32,5 +32,5 @@ fs.writeFileSync(out,
   "window.ENC_BUNDLE=\"" + blob + "\";\nwindow.ENC_ITER=" + ITER + ";\n");
 
 console.log(`Wrote ${out}`);
-console.log(`  passphrase: ${PW === "Spaceelfs" ? "Spaceelfs (default)" : "(from $PW)"}`);
+console.log(`  passphrase: ${PW === "Erebus" ? "Erebus (default)" : "(from $PW)"}`);
 console.log(`  plaintext: ${plaintext.length} chars -> ciphertext blob: ${blob.length} base64 chars`);
