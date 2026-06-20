@@ -479,6 +479,14 @@ table.kv td:first-child{color:var(--muted)}
 .phead .role{font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
 .phead .sheetb{background:none;border:none;color:var(--dim);font-size:14px;padding:2px 5px;cursor:pointer}
 .phead .sheetb:hover{color:var(--accent)}
+.phead .pgrip{background:none;border:none;color:var(--dim);font-size:15px;line-height:1;padding:2px 3px;
+  cursor:grab;touch-action:none;user-select:none}
+.phead .pgrip:hover{color:var(--accent)}
+.pcard.dragging{opacity:.55;outline:2px dashed var(--accent);outline-offset:-2px;cursor:grabbing}
+.psort{display:inline-flex;align-items:center;gap:6px}
+.psort .rl{font-family:var(--font);font-weight:600;font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--muted)}
+.psort select{background:var(--panel2);border:1px solid var(--line);color:var(--bone);border-radius:6px;padding:5px 7px;font-size:12px}
+.psort select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
 .pbody{padding:11px 13px}
 .trackers{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:11px}
 .trk{flex:1;min-width:130px;background:#00000026;border:1px solid var(--line);border-radius:11px;padding:8px 10px}
@@ -1473,26 +1481,48 @@ function playCard(e){
     (maxM>1?trk("Models",st.models,maxM,"pm",e.uid):"")+
     ((maxW>1||maxM<=1)?trk("Wounds",st.wounds,maxW,"pw",e.uid):"")+`</div>`;
   return `<div class="pcard${dead?' dead':''}" data-uid="${e.uid}">
-    <div class="phead"><div class="pn">${esc(u.name)}</div><div class="role">${esc(u.slot)}</div>
+    <div class="phead"><button class="pgrip" title="Drag to reorder" aria-label="Drag to reorder">⠿</button>
+      <div class="pn">${esc(u.name)}</div><div class="role">${esc(u.slot)}</div>
       <button class="sheetb" data-detail="${e.id}" title="Datasheet">☰</button></div>
     <div class="pbody">${trackers}${stat}${whtml}${rhtml}${toks}${react}</div></div>`;
+}
+// entries for Play mode in the chosen order: detachment (natural), name, type
+// (battlefield role), or a custom drag order persisted per list in PLAY.__order.
+function playEntries(){
+  const rows=[];
+  eachEntry((e,s,d)=>rows.push({e,role:(unitMap[e.id]&&unitMap[e.id].slot)||s.role,detName:d.name||d.id||""}));
+  const sort=PLAY.__sort||"detachment";
+  const nameOf=x=>(unitMap[x.e.id]?unitMap[x.e.id].name:"").toLowerCase();
+  if(sort==="name") rows.sort((a,b)=>nameOf(a).localeCompare(nameOf(b)));
+  else if(sort==="type") rows.sort((a,b)=>(SLOT_ORDER.indexOf(a.role)-SLOT_ORDER.indexOf(b.role))||nameOf(a).localeCompare(nameOf(b)));
+  else if(sort==="custom"&&Array.isArray(PLAY.__order)){
+    const idx=u=>{const i=PLAY.__order.indexOf(u);return i<0?1e9:i;};
+    rows.sort((a,b)=>idx(a.e.uid)-idx(b.e.uid));
+  } // "detachment" keeps the natural slot/detachment order
+  return rows;
 }
 function renderPlay(){
   loadPlay();
   const root=document.getElementById("play");
-  const entries=allEntries();
-  if(!entries.length){root.innerHTML=`<div class="empty">No units yet — switch to <b>Build</b> and add some, then come back to play.</div>`;return;}
+  const rows=playEntries();
+  if(!rows.length){root.innerHTML=`<div class="empty">No units yet — switch to <b>Build</b> and add some, then come back to play.</div>`;return;}
+  const entries=rows.map(r=>r.e);
   const alive=entries.filter(e=>!(PLAY[e.uid]&&PLAY[e.uid].models<=0)).length;
   const army=PLAY.__army||(PLAY.__army={}); if(army.reactions==null)army.reactions=reactionAllotment(R.limit);
+  const sort=PLAY.__sort||"detachment";
+  const sortOpt=(v,l)=>`<option value="${v}" ${sort===v?"selected":""}>${l}</option>`;
   root.innerHTML=`<div class="playbar"><span class="pt">⚔ Play Mode</span>
       <span class="sub">${R.name||"Untitled list"} · ${alive}/${entries.length} units active</span>
       <span class="grow"></span>
+      <span class="psort"><span class="rl">Sort</span><select id="playSort">
+        ${sortOpt("detachment","Detachment")}${sortOpt("name","Name")}${sortOpt("type","Type")}${sortOpt("custom","Custom (drag)")}
+      </select></span>
       <span class="rpool" title="Army-wide Reaction Points: base 1 + bonus for ${R.limit||0} pts limit. Spend 1 per Reaction; ↻ resets for a new turn.">
         <span class="rl">Reaction Pts</span>
         <button class="ptn" data-arx="-">−</button><b>${army.reactions}</b><button class="ptn" data-arx="+">＋</button>
         <button class="ptn rreset" data-arx="reset" title="New turn — reset to ${reactionAllotment(R.limit)}">↻</button></span>
       <button class="btn" id="playReset">Reset trackers</button></div>
-    <div class="pgrid">${entries.map(playCard).join("")}</div>`;
+    <div class="pgrid">${rows.map(r=>playCard(r.e)).join("")}</div>`;
   savePlay();
   bindPlay();
 }
@@ -1528,6 +1558,36 @@ function bindPlay(){
   root.querySelectorAll("[data-detail]").forEach(b=>b.onclick=()=>showDetail(b.dataset.detail));
   const rb=root.querySelector("#playReset");
   if(rb)rb.onclick=()=>{if(confirm("Reset all unit trackers to full strength?")){PLAY={};savePlay();renderPlay();}};
+  const ss=root.querySelector("#playSort");
+  if(ss)ss.onchange=()=>{PLAY.__sort=ss.value;savePlay();renderPlay();};
+  initPlayDrag(root.querySelector(".pgrid"));
+}
+// Pointer-based drag reorder (works for mouse + touch). Dragging from a card's
+// grip live-reorders the grid; on release the new order is saved as a custom sort.
+function dragAfter(grid,x,y,exclude){
+  let closest=null,best=Infinity,after=false;
+  grid.querySelectorAll(".pcard").forEach(c=>{ if(c===exclude) return;
+    const r=c.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
+    const d=Math.hypot(x-cx,y-cy);
+    if(d<best){best=d;closest=c;after=(Math.abs(y-cy)>r.height*0.4)?(y>cy):(x>cx);}
+  });
+  return {closest,after};
+}
+function initPlayDrag(grid){
+  if(!grid) return;
+  grid.querySelectorAll(".pgrip").forEach(h=>{
+    h.addEventListener("pointerdown",e=>{
+      const card=h.closest(".pcard"); if(!card) return;
+      e.preventDefault(); card.classList.add("dragging");
+      const move=ev=>{ const {closest,after}=dragAfter(grid,ev.clientX,ev.clientY,card);
+        if(closest){ after?closest.after(card):closest.before(card); } };
+      const up=()=>{ card.classList.remove("dragging");
+        window.removeEventListener("pointermove",move); window.removeEventListener("pointerup",up);
+        PLAY.__order=[...grid.querySelectorAll(".pcard")].map(c=>c.dataset.uid);
+        PLAY.__sort="custom"; savePlay(); renderPlay(); };
+      window.addEventListener("pointermove",move); window.addEventListener("pointerup",up);
+    });
+  });
 }
 
 // ---------- glossary / clickable terms ----------
