@@ -57,6 +57,17 @@ ADV = {
    "text": "Command Battlefield Role only. Add one additional Battlefield Role Slot (not High Command, Command, Warlord or Lord of War) to this Detachment. Fill it with a Legiones Astartes Unit that does NOT have the Alpha Legion Trait and includes no Unique Models."},
 }
 
+# Traitor-allegiance-wide advantage (Liber Hereticus p18 "Corrupted Legions") — added to
+# every traitor Legion. The app has no allegiance tracking, so Traitor-only is stated in text.
+TRAITORS = ["alpha-legion", "death-guard", "emperors-children", "iron-warriors", "night-lords",
+            "sons-of-horus", "thousand-sons", "word-bearers", "world-eaters"]
+TRUE_BELIEVERS = {"key": "true-believers", "name": "True Believers",
+   "text": "Traitor Allegiance only. All Models in the Unit gain the Malefic Sub-Type. "
+           "Malefic: when a Unit composed entirely of Malefic Models would gain any Tactical Status, it is not "
+           "applied — instead the Unit suffers D3 automatic wounds (AP 2, Damage 1, no Saving Throws), then no "
+           "Status is applied. Malefic Models are unaffected by Special Rules that lower their Leadership, Cool, "
+           "Willpower or Intelligence. A non-Malefic Model may not join or be joined by a Unit containing Malefic Models."}
+
 
 def main():
     changed = 0
@@ -73,7 +84,21 @@ def main():
             json.dump(b, open(path, "w"), ensure_ascii=False, indent=1)
         print("%-22s + %s" % (aid, adv["name"]))
         changed += 1
-    print("\n%s %d legion advantage(s)." % ("Would add" if CHECK else "Added", changed))
+    # traitor-wide True Believers
+    for aid in TRAITORS:
+        path = os.path.join(ROOT, "data_%s" % aid, "bundle.json")
+        if not os.path.exists(path):
+            continue
+        b = json.load(open(path))
+        pa = b.setdefault("detachments", {}).setdefault("primeAdvantages", [])
+        if any(isinstance(x, dict) and x.get("key") == TRUE_BELIEVERS["key"] for x in pa):
+            continue
+        if not CHECK:
+            pa.append(TRUE_BELIEVERS)
+            json.dump(b, open(path, "w"), ensure_ascii=False, indent=1)
+        print("%-22s + %s" % (aid, TRUE_BELIEVERS["name"]))
+        changed += 1
+    print("\n%s %d advantage(s)." % ("Would add" if CHECK else "Added", changed))
 
 
 if __name__ == "__main__":
