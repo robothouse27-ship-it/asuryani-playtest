@@ -1255,8 +1255,11 @@ function renderPrime(e){
   const det=e._det, uniq=unitHasUnique(unitMap[e.id]);
   let opts=`<option value="">— choose advantage —</option>`;
   primeAdvs().forEach(a=>{
-    let dis=(a.commandOnly&&e._primeRole!=="Command")||(uniq&&a.key!=="logistical-benefit")
-      ||(a.oncePerDetachment&&primeUsed(det,a.key,e.uid));
+    let dis=(a.commandOnly&&e._primeRole!=="Command")
+      ||(a.roleOnly&&a.roleOnly.indexOf(e._primeRole)<0)
+      ||(uniq&&a.key!=="logistical-benefit")
+      ||(a.oncePerDetachment&&primeUsed(det,a.key,e.uid))
+      ||(a.oncePerArmy&&R.detachments.some(d=>primeUsed(d,a.key,e.uid)));
     opts+=`<option value="${a.key}" ${e.prime===a.key?"selected":""} ${dis?"disabled":""}>${a.name}${dis?" — n/a":""}</option>`;
   });
   const cur=primeAdvs().find(a=>a.key===e.prime);
